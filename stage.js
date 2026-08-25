@@ -777,7 +777,10 @@ function extractParentPageStageInfo_(
     url:
       ROCKET.BASE +
       '/main/ticket_view.php?id=' +
-      parentId
+      parentId,
+
+    lastSync:
+      new Date()
 
   };
 
@@ -1106,7 +1109,8 @@ const STAGE_HEADERS_ = [
   'Current Job Type',
   'Active Stages',
   'Current Stage',
-  'Rocket URL'
+  'Rocket URL',
+  'Last Sync'
 
 ];
 
@@ -1127,7 +1131,11 @@ function stageToRow_(d) {
     d.currentStage ||
       '',
 
-    d.url
+    d.url,
+
+    formatDateForSheet_(
+      d.lastSync
+    )
 
   ];
 

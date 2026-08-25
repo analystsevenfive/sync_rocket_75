@@ -757,7 +757,8 @@ const GASOLINE_HEADERS_ = [
 
   'Technician Name',
   'Number of Jobs Received',
-  'Amount Received'
+  'Amount Received',
+  'Last Sync'
 
 ];
 
@@ -786,6 +787,16 @@ function writeGasolineSheet_(rows) {
   }
 
 
+  // รายงานนี้เขียนทับทั้งชีทเป็น snapshot เดียว
+  // (ไม่ใช่ upsert ทีละแถวเหมือนชีทอื่น) เลยใช้เวลา
+  // sync ครั้งนี้ค่าเดียวกันทุกแถว แทนที่จะมี lastSync
+  // แยกต่อรายการเหมือน Tickets/Trick2
+  const lastSync =
+    formatDateForSheet_(
+      new Date()
+    );
+
+
   sheet.clearContents();
 
 
@@ -796,7 +807,8 @@ function writeGasolineSheet_(rows) {
 
         r.name,
         r.jobs,
-        r.amount
+        r.amount,
+        lastSync
 
       ];
 

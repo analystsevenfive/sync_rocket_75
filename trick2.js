@@ -740,7 +740,8 @@ const TRICK2_HEADERS_ = [
   'Team',
   'Total',
   'Remarks',
-  'Rocket URL'
+  'Rocket URL',
+  'Last Sync'
 
 ];
 
@@ -758,7 +759,11 @@ function trick2ToRow_(d) {
     d.team,
     '',
     d.note,
-    d.url
+    d.url,
+
+    formatDateForSheet_(
+      d.lastSync
+    )
 
   ];
 
