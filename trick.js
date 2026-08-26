@@ -1974,7 +1974,7 @@ function formatDateForSheet_(date) {
   return Utilities.formatDate(
     date,
     Session.getScriptTimeZone(),
-    'MM/dd/yyyy HH:mm:ss'
+    'dd/MM/yyyy HH:mm:ss'
   );
 
 }
