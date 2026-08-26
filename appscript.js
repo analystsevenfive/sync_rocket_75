@@ -13,13 +13,55 @@
  *************************************************/
 
 
+// คำนวณช่วงวันที่ sync แบบ "1 สัปดาห์ล่าสุด" อัตโนมัติทุกครั้งที่รัน
+// (ย้อนหลัง 6 วันจากวันนี้ ถึงวันนี้ = รวม 7 วัน) ไม่ต้องแก้วันที่มือแล้ว
+function computeLastWeekRange_() {
+
+  const timezone =
+    Session.getScriptTimeZone();
+
+  const today =
+    new Date();
+
+  const weekAgo =
+    new Date(
+      today.getTime() -
+      6 * 24 * 60 * 60 * 1000
+    );
+
+
+  return {
+
+    start:
+      Utilities.formatDate(
+        weekAgo,
+        timezone,
+        'dd/MM/yyyy'
+      ),
+
+    end:
+      Utilities.formatDate(
+        today,
+        timezone,
+        'dd/MM/yyyy'
+      )
+
+  };
+
+}
+
+
+
+const ROCKET_DATE_RANGE_ =
+  computeLastWeekRange_();
+
+
 const ROCKET = {
 
   BASE: 'https://rocket75.com',
 
-  // เปลี่ยนช่วงวันที่ตรงนี้ (ตอนนี้ตั้งไว้ 1 สัปดาห์เพื่อให้ sync จบใน 1 รัน)
-  START_DATE: '16/08/2026',
-  END_DATE: '22/08/2026',
+  START_DATE: ROCKET_DATE_RANGE_.start,
+  END_DATE: ROCKET_DATE_RANGE_.end,
 
   TICKET_SHEET: 'Tickets'
 
