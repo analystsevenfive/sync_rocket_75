@@ -269,12 +269,11 @@ function syncTrick2() {
 
   if (parentIds === null) {
 
-    // เริ่ม sync cycle ใหม่ (ไม่ใช่ resume ต่อ) ล้าง
-    // ข้อมูลเก่าก่อนเขียนรอบนี้เสมอ — เช็คจาก
-    // parentIds === null กันไม่ให้ clear ซ้ำตอน resume
-    // (ไม่งั้นจะลบทับข้อมูลที่ chunk ก่อนหน้าเพิ่งเขียน)
-    clearTrick2SheetData();
-
+    // เริ่ม sync cycle ใหม่ (ไม่ใช่ resume ต่อ) — ไม่
+    // clear ทั้งชีทแล้วเหมือนเดิม เปลี่ยนเป็น upsert
+    // ล้วนๆ + ข้าม ticket ที่ปิดงานแล้วตอน phase 3 (ดู
+    // getClosedSubTicketIds_ ในไฟล์ trick.js) เพราะ
+    // ข้อมูล 3 เดือนมีจำนวนมาก resync ทุกใบทุกรอบช้าเกิน
     const parentHtml =
       getParentTicketHtml_(
         auth,
@@ -488,10 +487,66 @@ function syncTrick2() {
       'SYNC2_PENDING_SUBS'
     );
 
+  let totalToFetch =
+    readJsonProp_(
+      props,
+      'SYNC2_TOTAL_TO_FETCH'
+    );
+
+
   if (pendingSubs === null) {
 
+    // อ้างอิงชีท Tickets (getClosedSubTicketIds_ จาก
+    // trick.js) เพื่อข้าม ticket ที่ปิดงานแล้ว ไม่ fetch
+    // detail ซ้ำ — ถ้า syncRocket75 ยังไม่เคยรัน/ยังไม่มี
+    // ข้อมูล Repair Result ของ id นี้ จะไม่ข้ามอะไรเลย
+    // (fetch ตามปกติ ปลอดภัยกว่าเดาข้ามผิด)
+    const closedIds =
+      getClosedSubTicketIds_();
+
     pendingSubs =
-      subIds.slice();
+      subIds.filter(function(id) {
+
+        return !closedIds.has(
+          String(id)
+        );
+
+      });
+
+    totalToFetch =
+      pendingSubs.length;
+
+    writeJsonProp_(
+      props,
+      'SYNC2_TOTAL_TO_FETCH',
+      totalToFetch
+    );
+
+    const skippedCount =
+      subIds.length -
+      pendingSubs.length;
+
+    if (skippedCount > 0) {
+
+      Logger.log(
+        'ข้าม ' +
+        skippedCount +
+        ' ใบเพราะปิดงานแล้ว (อ้างอิงจากชีท Tickets) — ' +
+        'เหลือต้อง fetch ' +
+        pendingSubs.length +
+        ' ใบ จากทั้งหมด ' +
+        subIds.length +
+        ' ใบ'
+      );
+
+    }
+
+  }
+
+  if (totalToFetch === null) {
+
+    totalToFetch =
+      subIds.length;
 
   }
 
@@ -607,9 +662,9 @@ function syncTrick2() {
 
     Logger.log(
       'เขียนแล้ว ' +
-      (subIds.length - pendingSubs.length) +
+      (totalToFetch - pendingSubs.length) +
       '/' +
-      subIds.length
+      totalToFetch
     );
 
   }
@@ -633,6 +688,7 @@ function syncTrick2() {
   props.deleteProperty('SYNC2_SUB_IDS');
   props.deleteProperty('SYNC2_PENDING_SUBS');
   props.deleteProperty('SYNC2_INFO_MAP');
+  props.deleteProperty('SYNC2_TOTAL_TO_FETCH');
 
 
   const seconds =
@@ -671,6 +727,7 @@ function resetSync2State() {
   props.deleteProperty('SYNC2_SUB_IDS');
   props.deleteProperty('SYNC2_PENDING_SUBS');
   props.deleteProperty('SYNC2_INFO_MAP');
+  props.deleteProperty('SYNC2_TOTAL_TO_FETCH');
 
 
   Logger.log(
@@ -684,6 +741,8 @@ function resetSync2State() {
 
 
 
+// ไม่ถูกเรียกอัตโนมัติจาก syncTrick2() แล้ว — เก็บไว้
+// ใช้แบบ manual เท่านั้น (sync ใช้ upsert ล้วนๆ แทน)
 function clearTrick2SheetData() {
 
   const ss =

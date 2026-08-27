@@ -1376,12 +1376,15 @@ function syncTicketStage() {
 
   if (parentIds === null) {
 
-    // เริ่ม sync cycle ใหม่ (ไม่ใช่ resume ต่อ) ล้าง
-    // ข้อมูลเก่าก่อนเขียนรอบนี้เสมอ — เช็คจาก
-    // parentIds === null กันไม่ให้ clear ซ้ำตอน resume
-    // (ไม่งั้นจะลบทับข้อมูลที่ chunk ก่อนหน้าเพิ่งเขียน)
-    clearStageSheetData();
-
+    // เริ่ม sync cycle ใหม่ (ไม่ใช่ resume ต่อ) — ไม่
+    // clear ทั้งชีทแล้วเหมือนเดิม เปลี่ยนเป็น upsert
+    // ล้วนๆ แทน (เหมือน syncRocket75/syncTrick2) —
+    // ข้อจำกัดที่ยังไม่แก้รอบนี้: ไม่มี prune ticket ที่
+    // หลุดช่วงวันที่ และไม่มี skip ticket ที่ปิดงานแล้ว
+    // (ต้องมี cache แยกเพราะชีทนี้ key ด้วย Job No. ไม่ใช่
+    // parent ticket id ตรงๆ) — ยังพอไหวเพราะ fetch แค่
+    // 1 request/parent ticket ไม่ได้ไล่ sub ticket ต่อ
+    // เหมือน 2 ไฟล์นั้น
     const parentHtml =
       getParentTicketHtml_(
         auth,
@@ -1610,6 +1613,8 @@ function resetSync3State() {
 
 
 
+// ไม่ถูกเรียกอัตโนมัติจาก syncTicketStage() แล้ว —
+// เก็บไว้ใช้แบบ manual เท่านั้น (sync ใช้ upsert ล้วนๆ แทน)
 function clearStageSheetData() {
 
   const ss =

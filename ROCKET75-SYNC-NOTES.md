@@ -1,6 +1,6 @@
 # Rocket75 → Google Sheets Sync — บันทึกสถานะและแนวทางพัฒนาต่อ
 
-อัปเดตล่าสุด: 2026-08-25
+อัปเดตล่าสุด: 2026-08-27
 
 Repo: https://github.com/analystsevenfive/sync_rocket_75 (private) — โค้ดทุกไฟล์อยู่ใน Apps Script
 project เดียวกัน (multi-file, share global scope) แค่แยกไฟล์เพื่อความเป็นระเบียบ
@@ -12,13 +12,13 @@ project เดียวกัน (multi-file, share global scope) แค่แ�
 
 | ไฟล์ | Sheet ปลายทาง | ฟังก์ชันหลัก | ทำอะไร |
 |---|---|---|---|
-| `appscript.js` | Tickets | `syncRocket75()` | รายละเอียด ticket ซ่อมทุกใบ (1 แถว/sub ticket) |
+| `trick.js` | Tickets | `syncRocket75()` | รายละเอียด ticket ซ่อมทุกใบ (1 แถว/sub ticket) |
 | `trick2.js` | Trick2 | `syncTrick2()` | สรุปสั้นต่อ ticket + ช่าง/ทีมที่รับผิดชอบ |
 | `gasoline.js` | Gasoline | `syncGasoline()` | สรุปค่าน้ำมันต่อช่างในช่วงวันที่ที่กำหนด |
 | `stage.js` | Ticket Stage | `syncTicketStage()` | ticket แต่ละใบตอนนี้อยู่ stage ไหนใน pipeline 10 ขั้น |
 
 ทั้ง 4 ตัวใช้ `ROCKET.BASE`/`ROCKET.START_DATE`/`ROCKET.END_DATE` และฟังก์ชัน login/fetch/parse
-พื้นฐานร่วมกันจาก `appscript.js` (ดูหัวข้อ "ฟังก์ชันที่ใช้ร่วมกันข้ามไฟล์" ด้านล่าง) แต่ใช้
+พื้นฐานร่วมกันจาก `trick.js` (ดูหัวข้อ "ฟังก์ชันที่ใช้ร่วมกันข้ามไฟล์" ด้านล่าง) แต่ใช้
 **Script Properties คนละ prefix กัน** (`SYNC_*`, `SYNC2_*`, `SYNC3_*`) เพื่อ resume แยกอิสระ ไม่ชนกัน
 (Gasoline ไฟล์เล็ก ทำจบใน request เดียว ไม่ต้อง resume)
 
@@ -69,8 +69,49 @@ syncGasoline:
 
 `getParentTicketHtml_()` ไม่มี pagination ฝั่งเซิร์ฟเวอร์จริง เซิร์ฟเวอร์ render ข้อมูลทั้งหมดที่
 match ช่วงวันที่มาในการตอบกลับครั้งเดียว — ช่วงกว้างมาก (เช่น 16 ปี) ทำให้ค้างเกิน 6 นาที limit
-ของ Apps Script โดยยังไม่ตอบกลับด้วยซ้ำ **วิธีแก้:** ใช้ `ROCKET.START_DATE`/`END_DATE` แคบๆ
-(ปัจจุบันตั้งไว้ 1 สัปดาห์) — ถ้าจะ sync ย้อนหลังเยอะ ให้ไล่ทีละเดือน (ดู `testFindOldestTickets()`)
+ของ Apps Script โดยยังไม่ตอบกลับด้วยซ้ำ **วิธีแก้:** ใช้ `ROCKET.START_DATE`/`END_DATE` แคบพอ
+(ปัจจุบันตั้งไว้ **3 เดือนล่าสุด**, `computeLast3MonthsRange_()` — เคยเป็น 1 สัปดาห์
+`computeLastWeekRange_()` มาก่อน) — request เดียวนี้ยังไม่ timeout แม้ 3 เดือน (~2,400+ ticket)
+เพราะคืนแค่ parent ticket ID ไม่ใช่รายละเอียดเต็ม ปัญหา timeout จริงๆ อยู่ที่ phase 3 (ดึงรายละเอียด
+sub ticket ทีละใบ) แทน แก้ด้วยข้อ 7 (Incremental sync) ด้านล่าง — ถ้าจะ sync ย้อนหลังไกลกว่านี้อีก
+ให้ไล่ทีละเดือน (ดู `testFindOldestTickets()`)
+
+### 7. ข้อมูล 3 เดือนเยอะเกินจะ resync ทั้งหมดทุกรอบ — ต้องทำ Incremental Sync
+
+เดิม `syncRocket75()`/`syncTrick2()`/`syncTicketStage()` จะ `clear` ทั้งชีท (ยกเว้น header) ทุกครั้ง
+ที่เริ่ม cycle ใหม่ แล้ว fetch รายละเอียดสุด (`ticket_checkrepair_view.php`/`ticket_view.php`) ของ
+ticket **ทุกใบในช่วงวันที่ใหม่หมด** — ตอน range แคบ (1 สัปดาห์, ~150-190 ticket) ไม่มีปัญหา แต่พอ
+ขยายเป็น 3 เดือน (~2,400+ sub ticket) วัดจริงพบว่า phase 3 (fetch รายละเอียด) ใช้เวลารวม
+**~35-40 นาที** ต้องกด "เรียกใช้" ซ้ำ 8-9 รอบกว่าจะจบ 1 cycle แล้วพอจบก็เริ่มนับใหม่หมดทันที กิน
+quota trigger (90 นาที/วัน บัญชี consumer) เกือบทั้งหมดไปกับสคริปนี้ตัวเดียว
+
+**วิธีแก้ (ทำแล้วใน `trick.js`/`trick2.js`, ยังไม่ทำใน `stage.js`):** เปลี่ยนจาก "clear ทั้งชีทแล้ว
+resync ใหม่หมด" เป็น **upsert ล้วนๆ + ข้าม (skip) การ fetch รายละเอียดซ้ำสำหรับ ticket ที่ปิดงาน
+แล้ว**:
+
+- `getClosedSubTicketIds_()` (ประกาศใน `trick.js`, ใช้ร่วมกับ `trick2.js` ได้) — อ่านคอลัมน์
+  `Ticket ID` + `Repair Result` จากชีท Tickets ที่มีอยู่แล้ว คืน `Set` ของ ticket ID ที่
+  `Repair Result === 'ซ่อมเรียบร้อย'` (ค่าคงที่ `CLOSED_REPAIR_RESULT_`)
+- ตอนสร้าง `pendingSubs` ใหม่ (เฉพาะตอนเริ่ม phase 3 ของ cycle นั้นจริงๆ ไม่ทำซ้ำตอน resume) —
+  filter เอา ticket ที่อยู่ใน `closedIds` ออกก่อน ไม่ fetch ซ้ำเลย
+- `pruneStaleTicketRows_()` (ใช้ใน `trick.js` เท่านั้นตอนนี้) — ลบแถวที่ Ticket ID ไม่อยู่ใน
+  `subIds` ชุดล่าสุดแล้ว (ticket ที่หลุดเกินช่วง 3 เดือนไปแล้ว) ลบจากแถวล่างขึ้นบนกันเลขแถวเลื่อน
+
+**สมมติฐานสำคัญที่ยังไม่ 100% ยืนยัน (ต้อง verify กับข้อมูลจริง):** ticket ที่ `Repair Result`
+บันทึกว่า `"ซ่อมเรียบร้อย"` แล้ว จะไม่ถูกแก้ไขฟิลด์ทางเทคนิค (ผลการซ่อม, การแก้ไข, ช่างเทคนิค ฯลฯ)
+ย้อนหลังอีก แม้ ticket จะเดินหน้าต่อไปขั้นตอนบัญชี/ปิดบิลก็ตาม — **ถ้าสมมติฐานนี้ผิด** (มีแก้ไข
+ย้อนหลังหลังปิดงานจริง) ข้อมูลจะเก่าค้าง (stale) แบบเงียบๆ ไม่มี error ให้เห็น **วิธีเช็ค:** ดู log
+ตอน sync ว่าจำนวนที่ "ข้าม" สมเหตุสมผลไหม (ไม่ควรข้ามเกือบทั้งหมดตั้งแต่รอบแรกหลัง deploy เพราะยัง
+ไม่เคยมี Repair Result เก่าอยู่ในชีทมาก่อน) และสุ่มเช็คบางใบเทียบกับหน้าเว็บจริงเป็นระยะ
+
+**ข้อจำกัดที่ยังไม่แก้ (รู้ตัวแล้ว ไม่ใช่ลืม):**
+
+- `trick2.js` ยังไม่มี prune (เพราะชีท Trick2 key ด้วย `Job No. (BK)` ไม่ใช่ Ticket ID ตรงๆ ต้องมี
+  mapping subId→ticketNo ก่อนถึงจะรู้ว่าแถวไหนควรลบ) — แถวที่หลุดช่วงวันที่จะยังค้างอยู่ในชีทไปเรื่อยๆ
+  จนกว่าจะ `clearTrick2SheetData()` + `resetSync2State()` มือ
+- `stage.js` ยังไม่มีทั้ง prune และ skip-if-closed (ต้องมี cache แยกเพราะ key ด้วย Job No. เหมือนกัน
+  และ parent ticket ไม่มีฟิลด์ "ปิดงานแล้ว" ที่ชัดเจนเท่า Repair Result) — ยังคง fetch ทุก parent
+  ticket ทุกรอบเหมือนเดิม แต่อย่างน้อยไม่ clear ทั้งชีททิ้งแล้ว (แก้แค่บั๊ก clear เปล่าๆ)
 
 ### 4. `UrlFetchApp.fetchAll()` ยิงพัง exception ทั้งชุดได้
 
@@ -84,7 +125,7 @@ HTTP 4xx/5xx ไม่ได้ดัก connection-level failure) **วิธ�
 `Sheets.Spreadsheets.Values.batchUpdate` แบบ `valueInputOption: 'USER_ENTERED'` ตีความ string
 ตัวเลขล้วนเป็น number อัตโนมัติ (เหมือนพิมพ์เข้า Sheets เอง) ทำให้เบอร์โทรที่ขึ้นต้นด้วย 0 เสียเลข
 0 ไป **วิธีแก้:** `forceTextIfNumeric_()` เติม `'` นำหน้าค่าที่เป็นตัวเลขล้วนก่อนเขียน (ใช้กับ
-phone field ใน `appscript.js`)
+phone field ใน `trick.js`)
 
 ### 6. Header row ต้องเขียนทับทุกครั้ง ไม่ใช่แค่ตอนชีทว่าง
 
@@ -92,10 +133,10 @@ phone field ใน `appscript.js`)
 header แค่ตอน `getLastRow() === 0` แถวหัวเก่าจะค้างชื่อคอลัมน์เดิม ทำให้เพี้ยนกับข้อมูลจริงที่เขียน
 แบบ schema ใหม่ **วิธีแก้:** เขียนทับ header ทุกครั้งที่รัน sync (ไม่มีเงื่อนไข)
 
-## ฟังก์ชันที่ใช้ร่วมกันข้ามไฟล์ (ประกาศใน `appscript.js`)
+## ฟังก์ชันที่ใช้ร่วมกันข้ามไฟล์ (ประกาศใน `trick.js`)
 
 เพราะทุกไฟล์อยู่ใน Apps Script project เดียวกัน (global scope เดียวกันทั้งโปรเจกต์) ไฟล์
-`trick2.js`/`gasoline.js`/`stage.js` เรียกใช้ฟังก์ชันเหล่านี้จาก `appscript.js` ได้ตรงๆ โดยไม่ต้อง
+`trick2.js`/`gasoline.js`/`stage.js` เรียกใช้ฟังก์ชันเหล่านี้จาก `trick.js` ได้ตรงๆ โดยไม่ต้อง
 import อะไร:
 
 - `ROCKET` (config: BASE, START_DATE, END_DATE, TICKET_SHEET)
@@ -104,12 +145,14 @@ import อะไร:
 - `buildCheckRepairRequest_()`, `getCheckRepair_()`, `extractCheckRepairIds_()`
 - `buildTicketDetailRequest_()`, `getTicketDetailHtml_()`, `parseTicketDetail_()`
 - `cleanText_()`, `extractRegex_()`, `escapeRegex_()`, `columnLetter_()`
+- `getClosedSubTicketIds_()` — ใช้กรอง ticket ที่ปิดงานแล้วออกก่อน fetch รายละเอียดซ้ำ (ดูข้อ 7
+  ด้านบน) — ใช้ร่วมกันใน `trick.js`/`trick2.js`
 
-**ข้อควรระวัง:** ถ้าจะแก้/ลบฟังก์ชันพวกนี้ใน `appscript.js` ต้องเช็คก่อนว่ากระทบ
+**ข้อควรระวัง:** ถ้าจะแก้/ลบฟังก์ชันพวกนี้ใน `trick.js` ต้องเช็คก่อนว่ากระทบ
 `trick2.js`/`gasoline.js`/`stage.js` ด้วยหรือไม่ เพราะไม่มี import statement ให้เห็นความสัมพันธ์
 ชัดเจนแบบไฟล์ปกติ
 
-## `appscript.js` — Tickets sheet
+## `trick.js` — Tickets sheet
 
 `syncRocket75()` เป็น resumable sync แบบ 3 phase ใช้ `PropertiesService` (`SYNC_PARENT_IDS`,
 `SYNC_PENDING_PARENTS`, `SYNC_SUB_IDS`, `SYNC_PENDING_SUBS`) เก็บ progress ข้ามการรัน (กด "เรียกใช้"
@@ -117,10 +160,11 @@ import อะไร:
 
 1. ดึง parent ticket IDs ทั้งหมดในช่วงวันที่
 2. ไล่ parent ทีละ chunk (20 ตัว) ยิงขนานด้วย `fetchAllWithRetry_` ไป `checkrepair.php` เก็บ sub
-   ticket IDs
-3. ไล่ sub ticket ทีละ chunk (15 ตัว) ยิงขนานดึงรายละเอียด parse แล้วเขียนชีทเป็น batch ผ่าน
-   `batchUpsertTickets_()` (ใช้ Advanced Sheets Service — ต้องเปิด "Google Sheets API" ใน
-   Services ของ Apps Script project ก่อน)
+   ticket IDs — จบ phase นี้แล้ว `pruneStaleTicketRows_()` ลบแถวที่หลุดช่วงวันที่ไปแล้ว แล้ว
+   `getClosedSubTicketIds_()` กรอง ticket ที่ปิดงานแล้วออกจากคิวที่ต้อง fetch (ดูข้อ 7 ด้านบน)
+3. ไล่ sub ticket ที่เหลือ (หลัง filter ข้อ 2) ทีละ chunk (15 ตัว) ยิงขนานดึงรายละเอียด parse
+   แล้วเขียนชีทเป็น batch ผ่าน `batchUpsertTickets_()` (ใช้ Advanced Sheets Service — ต้องเปิด
+   "Google Sheets API" ใน Services ของ Apps Script project ก่อน)
 
 Sheet "Tickets" มี 34 คอลัมน์ (ดู `TICKET_HEADERS_`) รวมถึง `Parent Ticket No` (เลขที่ ticket แม่
 แบบอ่านง่าย เช่น `BKRM0826-000544`) — **ไม่มี sheet "Parts" แล้ว** (ลบ feature ออกทั้งหมดตามคำขอ
@@ -128,8 +172,8 @@ Sheet "Tickets" มี 34 คอลัมน์ (ดู `TICKET_HEADERS_`) ร�
 
 **ฟังก์ชันจัดการ state:**
 - `resetSyncState()` — ล้างแค่ progress (`SYNC_*` properties) ไม่กระทบข้อมูลในชีท ปลอดภัย รันซ้ำได้
-- `clearSheetData()` — **ลบข้อมูลจริงถาวร** (แถว 2 เป็นต้นไปของ Tickets) แยกจาก `resetSyncState()`
-  ตั้งใจ เพราะคนละระดับความเสี่ยง ใช้ตอนอยากเริ่มข้อมูลใหม่สะอาดๆ เท่านั้น
+- `clearSheetData()` — **ลบข้อมูลจริงถาวร** (แถว 2 เป็นต้นไปของ Tickets) **ไม่ถูกเรียกอัตโนมัติจาก
+  `syncRocket75()` แล้ว** (ดูข้อ 7) เก็บไว้ใช้ manual เท่านั้น ตอนอยากเริ่มข้อมูลใหม่สะอาดๆ จริงๆ
 
 **Diagnostic ที่ยังไม่ได้ใช้จริง:** `testInspectPhotos()` — ดูโครงสร้าง `<img>`/`<video>` ในหน้า
 ticket detail เตรียมไว้สำหรับ feature ดึง URL รูปการเข้าซ่อม (GPS, หน้าร้าน, ก่อน/หลัง PM) ที่ผู้ใช้
@@ -138,7 +182,9 @@ ticket detail เตรียมไว้สำหรับ feature ดึง UR
 ## `trick2.js` — Trick2 sheet
 
 `syncTrick2()` โครงเดียวกับ `syncRocket75()` (parent → sub ticket → รายละเอียด) ต่างกันที่ปลายทาง
-เขียนและการดึงข้อมูลเสริม ใช้ Script Properties prefix `SYNC2_*`
+เขียนและการดึงข้อมูลเสริม ใช้ Script Properties prefix `SYNC2_*` — ใช้ `getClosedSubTicketIds_()`
+(อ้างอิงชีท Tickets) กรอง ticket ที่ปิดงานแล้วออกก่อน fetch เหมือน `syncRocket75()` (ดูข้อ 7 ด้านบน)
+แต่ **ยังไม่มี prune** (ดูข้อจำกัดในข้อ 7)
 
 คอลัมน์: `Received Date | Work Order No. | Job No. (BK) | Customer Name | Technician Name | Team |
 Total | Remarks | Rocket URL`
@@ -157,7 +203,8 @@ Mapping:
 **ยังไม่มีข้อมูลต้นทางที่ชัดเจน (ปล่อยว่างไว้ก่อน):** `Work Order No.`, `Total` — รอตัวอย่างจากเว็บ
 เพื่อ map ให้ถูก
 
-**ฟังก์ชันจัดการ state:** `resetSync2State()` / `clearTrick2SheetData()` (หลักการเดียวกับ Tickets)
+**ฟังก์ชันจัดการ state:** `resetSync2State()` / `clearTrick2SheetData()` — `clearTrick2SheetData()`
+ไม่ถูกเรียกอัตโนมัติแล้ว (เหมือน Tickets) เก็บไว้ใช้ manual เท่านั้น
 
 ## `gasoline.js` — Gasoline sheet
 
@@ -244,7 +291,9 @@ Rocket URL`
 
 (แท็บ "ผู้บริหาร"/"บันทึกประจำวัน" ที่เห็นในหน้าเว็บไม่อยู่ใน pipeline 10 ขั้นนี้ ไม่ถูกนับ)
 
-**ฟังก์ชันจัดการ state:** `resetSync3State()` / `clearStageSheetData()` (หลักการเดียวกับไฟล์อื่น)
+**ฟังก์ชันจัดการ state:** `resetSync3State()` / `clearStageSheetData()` — `clearStageSheetData()`
+ไม่ถูกเรียกอัตโนมัติแล้ว (เหมือนไฟล์อื่น) เก็บไว้ใช้ manual เท่านั้น — **ยังไม่มีทั้ง prune และ
+skip-if-closed** ที่นี่ (ดูข้อ 7 ด้านบนสำหรับเหตุผล) fetch ทุก parent ticket ทุกรอบเหมือนเดิม
 
 **Diagnostic functions ที่เก็บไว้ในไฟล์ (ใช้ตอน debug โครงสร้าง HTML เปลี่ยน):**
 `testInspectTicketOverview()`, `testChkTicket()`/`testChkTicketForSub()`,
@@ -253,10 +302,15 @@ Rocket URL`
 ## ตัวเลขจริงที่วัดได้ (ใช้ประมาณการ capacity planning)
 
 - ช่วง ~1 สัปดาห์ → ประมาณ 140-190 parent tickets (ขึ้นกับช่วงวันที่จริง)
+- ช่วง **3 เดือน** (config ปัจจุบัน) → วัดจริงได้ **~2,436 sub tickets** — `getParentTicketHtml_()`
+  (request เดียว ไม่มี pagination) ยังไม่ timeout แม้ขยายเป็น 3 เดือน
 - ดึงรายละเอียด sub-ticket เต็มหน้า (`getTicketDetailHtml_` + parse): **~4.25 วิ/ticket** ถ้ายิง
-  sequential — ลดลงมากด้วย `fetchAllWithRetry_` (ยิงขนานเป็น chunk)
-- sync เต็มรูปแบบ (143/143 ticket) วัดจริงใช้เวลา **~208 วินาที** (ต่ำกว่า limit 4.5 นาทีที่ตั้งไว้
-  ในโค้ดสบายๆ)
+  sequential — ลดลงมากด้วย `fetchAllWithRetry_` (ยิงขนานเป็น chunk, ~14 วิ/chunk 15 ใบ)
+- sync เต็มรูปแบบ (143/143 ticket, ช่วง 1 สัปดาห์) วัดจริงใช้เวลา **~208 วินาที**
+- sync เต็มรูปแบบ **ก่อนทำ incremental fix** (2,436 ticket, ช่วง 3 เดือน) — phase 3 (fetch
+  รายละเอียด) อย่างเดียวใช้เวลารวมประมาณ **35-40 นาที** ต้องกด "เรียกใช้" ซ้ำ **8-9 รอบ** กว่าจะจบ
+  1 cycle เพราะติด limit 4.5 นาที/execution — เป็นเหตุผลหลักที่ต้องทำ incremental sync (ข้อ 7
+  ด้านบน)
 - หน้า `ticket_view.php` (ใช้ใน `stage.js`) หนักกว่ามาก **~350KB/หน้า** (เทียบกับหน้า sub ticket
   detail ที่ไม่กี่ KB) เพราะโหลดทั้ง sidebar/menu ของทั้งระบบมาด้วย — เป็นเหตุผลที่ใช้ chunk เล็กกว่า
   (`PARENT_CHUNK = 10`)
@@ -264,12 +318,19 @@ Rocket URL`
 ## งานที่ยังไม่เสร็จ / ต้องทำต่อ
 
 1. **Trick2: `Work Order No.` และ `Total`** — ยังไม่มีข้อมูลต้นทางที่ชัดเจน รอตัวอย่างจากเว็บ
-2. **รูปภาพ/วิดีโอในหน้า ticket detail** — `testInspectPhotos()` เตรียมไว้แล้วใน `appscript.js`
+2. **รูปภาพ/วิดีโอในหน้า ticket detail** — `testInspectPhotos()` เตรียมไว้แล้วใน `trick.js`
    แต่ยังไม่ได้เอาผลมาเขียน parser จริง (feature ที่ขอไว้ตอนต้นสุด ยังไม่ได้ทำต่อ)
 3. **Ticket Stage: ปรับปรุง `classifyJobTypeText_()` keyword list ต่อเนื่อง** — ถ้าเจอ ticket ที่
    `Current Stage` ผิดจากที่ควรจะเป็น ให้เช็คคอลัมน์ `Current Job Type`/`Active Stages` ก่อนว่ามี
    คำที่ mapping ยังไม่ครอบคลุมหรือไม่ แล้วเพิ่ม keyword เข้าไปใน `classifyJobTypeText_()`
-4. **สิ่งที่ผู้ใช้ต้องทำเอง (ไม่ใช่โค้ด):** ลบ sheet tab "Parts" ออกจาก Google Sheets ด้วยตัวเอง
+4. **Trick2: prune แถวที่หลุดช่วงวันที่** — ต้องมี mapping subId→ticketNo ก่อน (อ่านจากชีท Tickets
+   คอลัมน์ Ticket ID + Ticket No ก็ได้ ถ้า syncRocket75 sync ไว้ก่อนแล้ว) ยังไม่ได้ทำ
+5. **Stage: prune + skip-if-closed** — ต้องมี cache แยก (parent ticket ไม่มีฟิลด์ปิดงานชัดเจนเท่า
+   Repair Result, ชีทก็ key ด้วย Job No. ไม่ใช่ parent id ตรงๆ) ยังไม่ได้ทำ ตอนนี้ยัง fetch ทุก
+   parent ticket ทุกรอบ
+6. **Verify สมมติฐาน "ปิดงานแล้วไม่แก้ไขย้อนหลัง"** — ดูข้อ 7 ด้านบน ยังไม่ได้ยืนยัน 100% กับข้อมูล
+   จริงระยะยาว ต้องเฝ้าดู log จำนวนที่ "ข้าม" ต่อเนื่องสักพัก และสุ่มเช็คบางใบเทียบกับหน้าเว็บจริง
+7. **สิ่งที่ผู้ใช้ต้องทำเอง (ไม่ใช่โค้ด):** ลบ sheet tab "Parts" ออกจาก Google Sheets ด้วยตัวเอง
    (โค้ดเลิกเขียนไปแล้วตั้งแต่ลบ feature Parts แต่ sheet tab เก่ายังไม่ถูกลบออกจาก spreadsheet จริง
    ถ้ายังไม่ได้ลบ)
 

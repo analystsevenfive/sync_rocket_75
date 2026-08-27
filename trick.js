@@ -13,9 +13,11 @@
  *************************************************/
 
 
-// คำนวณช่วงวันที่ sync แบบ "1 สัปดาห์ล่าสุด" อัตโนมัติทุกครั้งที่รัน
-// (ย้อนหลัง 6 วันจากวันนี้ ถึงวันนี้ = รวม 7 วัน) ไม่ต้องแก้วันที่มือแล้ว
-function computeLastWeekRange_() {
+// คำนวณช่วงวันที่ sync แบบ "3 เดือนล่าสุด" อัตโนมัติทุกครั้งที่รัน
+// (ย้อนหลัง 3 เดือนปฏิทินจากวันนี้ ถึงวันนี้) ไม่ต้องแก้วันที่มือแล้ว
+// ใช้ setMonth() แทนการลบจำนวนวันคงที่ เพราะแต่ละเดือนมีจำนวนวันไม่
+// เท่ากัน (28-31 วัน) — JS Date จัดการ overflow ปี/เดือนให้อัตโนมัติ
+function computeLast3MonthsRange_() {
 
   const timezone =
     Session.getScriptTimeZone();
@@ -23,10 +25,11 @@ function computeLastWeekRange_() {
   const today =
     new Date();
 
-  const weekAgo =
+  const threeMonthsAgo =
     new Date(
-      today.getTime() -
-      6 * 24 * 60 * 60 * 1000
+      today.getFullYear(),
+      today.getMonth() - 3,
+      today.getDate()
     );
 
 
@@ -34,7 +37,7 @@ function computeLastWeekRange_() {
 
     start:
       Utilities.formatDate(
-        weekAgo,
+        threeMonthsAgo,
         timezone,
         'dd/MM/yyyy'
       ),
@@ -53,7 +56,7 @@ function computeLastWeekRange_() {
 
 
 const ROCKET_DATE_RANGE_ =
-  computeLastWeekRange_();
+  computeLast3MonthsRange_();
 
 
 const ROCKET = {
@@ -123,12 +126,11 @@ function syncRocket75() {
   if (parentIds === null) {
 
     // เริ่ม sync cycle ใหม่ (ไม่ใช่ resume ต่อจาก
-    // รอบที่ค้าง) ล้างข้อมูลเก่าในชีทก่อนเขียนรอบนี้
-    // เสมอ — เช็คจาก parentIds === null เพื่อไม่ให้
-    // เผลอ clear ซ้ำตอน resume ต่อ (ไม่งั้นจะลบทับ
-    // ข้อมูลที่ chunk ก่อนหน้าเพิ่งเขียนไปเอง)
-    clearSheetData();
-
+    // รอบที่ค้าง) — ไม่ clear ทั้งชีทแล้วเหมือนเดิม
+    // เปลี่ยนเป็น upsert ล้วนๆ + prune เฉพาะแถวที่
+    // หลุดช่วงวันที่จริง (ดู pruneStaleTicketRows_
+    // ที่ phase 2) เพราะข้อมูล 3 เดือนมีจำนวนมาก
+    // (~2,500 ticket) resync ทั้งหมดทุกรอบช้าเกินไป
     const parentHtml =
       getParentTicketHtml_(
         auth,
@@ -319,10 +321,97 @@ function syncRocket75() {
       'SYNC_PENDING_SUBS'
     );
 
+  let totalToFetch =
+    readJsonProp_(
+      props,
+      'SYNC_TOTAL_TO_FETCH'
+    );
+
+
   if (pendingSubs === null) {
 
+    // ครั้งแรกของ phase 3 ในรอบนี้เท่านั้น (ไม่ทำซ้ำ
+    // ตอน resume) — ลบแถวที่หลุดช่วงวันที่ปัจจุบันออก
+    // จากชีทจริง (ticket เก่าเกิน 3 เดือนแล้ว) แล้วข้าม
+    // การ fetch ซ้ำสำหรับ ticket ที่ปิดงาน (ซ่อมเรียบร้อย
+    // แล้ว) ไปเลยเพราะเชื่อว่าข้อมูลจะไม่เปลี่ยนอีก —
+    // ลดจำนวน request ที่ต้องยิงจริงจาก ~2,500 เหลือ
+    // แค่ ticket ใหม่ๆ ที่ยังไม่เคยปิดงาน
+    const ticketSheetForPrune_ =
+      SpreadsheetApp
+        .getActiveSpreadsheet()
+        .getSheetByName(
+          ROCKET.TICKET_SHEET
+        );
+
+    if (ticketSheetForPrune_) {
+
+      const prunedCount =
+        pruneStaleTicketRows_(
+          ticketSheetForPrune_,
+          new Set(subIds)
+        );
+
+      if (prunedCount > 0) {
+
+        Logger.log(
+          'ลบ ' +
+          prunedCount +
+          ' แถวที่หลุดช่วงวันที่ sync ปัจจุบันแล้ว'
+        );
+
+      }
+
+    }
+
+
+    const closedIds =
+      getClosedSubTicketIds_();
+
     pendingSubs =
-      subIds.slice();
+      subIds.filter(function(id) {
+
+        return !closedIds.has(
+          String(id)
+        );
+
+      });
+
+    totalToFetch =
+      pendingSubs.length;
+
+    writeJsonProp_(
+      props,
+      'SYNC_TOTAL_TO_FETCH',
+      totalToFetch
+    );
+
+    const skippedCount =
+      subIds.length -
+      pendingSubs.length;
+
+    if (skippedCount > 0) {
+
+      Logger.log(
+        'ข้าม ' +
+        skippedCount +
+        ' ใบเพราะ Repair Result = "' +
+        CLOSED_REPAIR_RESULT_ +
+        '" อยู่แล้ว (ไม่ fetch ซ้ำ) — เหลือต้อง fetch ' +
+        pendingSubs.length +
+        ' ใบ จากทั้งหมด ' +
+        subIds.length +
+        ' ใบ'
+      );
+
+    }
+
+  }
+
+  if (totalToFetch === null) {
+
+    totalToFetch =
+      subIds.length;
 
   }
 
@@ -425,9 +514,9 @@ function syncRocket75() {
 
     Logger.log(
       'เขียนแล้ว ' +
-      (subIds.length - pendingSubs.length) +
+      (totalToFetch - pendingSubs.length) +
       '/' +
-      subIds.length
+      totalToFetch
     );
 
   }
@@ -450,6 +539,7 @@ function syncRocket75() {
   props.deleteProperty('SYNC_PENDING_PARENTS');
   props.deleteProperty('SYNC_SUB_IDS');
   props.deleteProperty('SYNC_PENDING_SUBS');
+  props.deleteProperty('SYNC_TOTAL_TO_FETCH');
 
 
   const seconds =
@@ -628,6 +718,7 @@ function resetSyncState() {
   props.deleteProperty('SYNC_PENDING_PARENTS');
   props.deleteProperty('SYNC_SUB_IDS');
   props.deleteProperty('SYNC_PENDING_SUBS');
+  props.deleteProperty('SYNC_TOTAL_TO_FETCH');
 
 
   Logger.log(
@@ -643,14 +734,16 @@ function resetSyncState() {
 
 /*************************************************
  * CLEAR SHEET DATA — ลบข้อมูลจริงถาวร!
- * (แยกจาก resetSyncState() โดยตั้งใจ เพราะเป็นคน
- * ละระดับความเสี่ยงกัน — ตัวนี้ลบแถวข้อมูลใน
- * Tickets ทิ้งจริง เหลือแค่ header กู้คืนได้
- * แค่ผ่าน Version History ของ Sheets เท่านั้น
- * ใช้ตอนต้องการเริ่มข้อมูลใหม่ทั้งหมดจริงๆ เช่น
- * ทดสอบ parser ใหม่แล้วอยาก sync ซ้ำแบบสะอาด
- * ควรรัน resetSyncState() คู่กันด้วยเสมอ ไม่งั้น
- * sync รอบถัดไปอาจ resume แบบข้อมูลไม่ครบช่วง)
+ * (ไม่ถูกเรียกอัตโนมัติจาก syncRocket75() แล้ว — เก็บ
+ * ไว้ใช้แบบ manual เท่านั้น เพราะตอนนี้ sync ใช้วิธี
+ * upsert + prune เฉพาะแถวที่หลุดช่วงวันที่แทน (ดู
+ * pruneStaleTicketRows_) ตัวนี้ลบแถวข้อมูลใน Tickets
+ * ทิ้งจริงทั้งหมด เหลือแค่ header กู้คืนได้แค่ผ่าน
+ * Version History ของ Sheets เท่านั้น ใช้ตอนต้องการ
+ * เริ่มข้อมูลใหม่ทั้งหมดจริงๆ เช่น ทดสอบ parser ใหม่
+ * แล้วอยาก sync ซ้ำแบบสะอาด ควรรัน resetSyncState()
+ * คู่กันด้วยเสมอ ไม่งั้น sync รอบถัดไปอาจ resume แบบ
+ * ข้อมูลไม่ครบช่วง)
  *************************************************/
 
 function clearSheetData() {
@@ -1947,6 +2040,194 @@ const TICKET_HEADERS_ = [
   'Last Sync'
 
 ];
+
+
+
+/*************************************************
+ * SKIP RE-FETCH ตั๋วที่ปิดงานแล้ว (INCREMENTAL SYNC)
+ * (ข้อมูล 3 เดือนมี ticket ~2,500 ใบ ถ้า fetch detail
+ * ใหม่ทุกใบทุกรอบ sync ใช้เวลาหลายสิบนาที เกิน quota
+ * ไม่คุ้ม — สมมติฐาน: ticket ที่ Repair Result บันทึก
+ * ว่า "ซ่อมเรียบร้อย" แล้ว ฟิลด์ทางเทคนิคที่ Tickets/
+ * Trick2 เก็บ (ผลการซ่อม, การแก้ไข, ช่างเทคนิค ฯลฯ)
+ * ไม่น่าจะถูกแก้ไขย้อนหลังอีก (ต่อให้ ticket ยังไป
+ * ต่อขั้นตอนบัญชี/ปิดบิลก็ไม่กระทบฟิลด์กลุ่มนี้) —
+ * ถ้าสมมติฐานนี้ผิดในทางปฏิบัติ (มีแก้ไขย้อนหลังบ่อย)
+ * ต้องปรับเงื่อนไขนี้ใหม่ ควรเช็คจาก log ว่าจำนวนที่
+ * ข้ามไปสมเหตุสมผลไหม (ไม่ควรข้ามเกือบทั้งหมดตั้งแต่
+ * รอบแรกที่เพิ่ง sync 3 เดือน เพราะยังไม่เคยมี Repair
+ * Result เก่าอยู่ในชีทมาก่อนเลย)
+ *
+ * อ่านจากชีท Tickets เอง (Ticket ID + Repair Result)
+ * ใช้ร่วมกันได้ทั้ง syncRocket75 และ syncTrick2 เพราะ
+ * ทั้งคู่ fetch sub ticket ตัวเดียวกัน (ticketId ตรงกัน)
+ *************************************************/
+
+const CLOSED_REPAIR_RESULT_ =
+  'ซ่อมเรียบร้อย';
+
+
+
+function getClosedSubTicketIds_() {
+
+  const closed =
+    new Set();
+
+  const sheet =
+    SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName(
+        ROCKET.TICKET_SHEET
+      );
+
+  if (!sheet) {
+
+    return closed;
+
+  }
+
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 2) {
+
+    return closed;
+
+  }
+
+
+  const repairResultCol =
+    TICKET_HEADERS_.indexOf(
+      'Repair Result'
+    ) + 1;
+
+  const ids =
+    sheet.getRange(
+      2,
+      1,
+      lastRow - 1,
+      1
+    ).getDisplayValues();
+
+  const repairResults =
+    sheet.getRange(
+      2,
+      repairResultCol,
+      lastRow - 1,
+      1
+    ).getDisplayValues();
+
+
+  for (
+    let i = 0;
+    i < ids.length;
+    i++
+  ) {
+
+    const id =
+      ids[i][0];
+
+    if (
+      id &&
+      repairResults[i][0] ===
+        CLOSED_REPAIR_RESULT_
+    ) {
+
+      closed.add(
+        String(id)
+      );
+
+    }
+
+  }
+
+
+  return closed;
+
+}
+
+
+
+/*************************************************
+ * PRUNE แถวที่หลุดช่วงวันที่ sync ปัจจุบัน
+ * (ตอนนี้ sync เป็น upsert ล้วนๆ ไม่ clear ทั้งชีทแล้ว
+ * — ticket ที่เคย sync ไว้แต่ตอนนี้เก่าเกินช่วงวันที่
+ * (เช่นเกิน 3 เดือน) จะไม่โดนแตะต้องอีกถ้าไม่ลบเอง เลย
+ * ต้องลบทิ้งแยกต่างหาก เทียบจาก Ticket ID ในชีทกับ
+ * validIds (sub ticket ทั้งหมดที่เจอจริงในช่วงวันที่
+ * ปัจจุบัน) ลบจากแถวล่างขึ้นบนกันเลขแถวเลื่อน)
+ *************************************************/
+
+function pruneStaleTicketRows_(
+  sheet,
+  validIds
+) {
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 2) {
+
+    return 0;
+
+  }
+
+
+  const ids =
+    sheet.getRange(
+      2,
+      1,
+      lastRow - 1,
+      1
+    ).getDisplayValues();
+
+  const rowsToDelete = [];
+
+
+  for (
+    let i = 0;
+    i < ids.length;
+    i++
+  ) {
+
+    const id =
+      String(
+        ids[i][0]
+      );
+
+    if (
+      id &&
+      !validIds.has(id)
+    ) {
+
+      rowsToDelete.push(
+        i + 2
+      );
+
+    }
+
+  }
+
+
+  rowsToDelete
+    .sort(function(a, b) {
+
+      return b - a;
+
+    })
+    .forEach(function(rowNum) {
+
+      sheet.deleteRow(
+        rowNum
+      );
+
+    });
+
+
+  return rowsToDelete.length;
+
+}
 
 
 
