@@ -269,6 +269,12 @@ function syncTrick2() {
 
   if (parentIds === null) {
 
+    // เริ่ม sync cycle ใหม่ (ไม่ใช่ resume ต่อ) ล้าง
+    // ข้อมูลเก่าก่อนเขียนรอบนี้เสมอ — เช็คจาก
+    // parentIds === null กันไม่ให้ clear ซ้ำตอน resume
+    // (ไม่งั้นจะลบทับข้อมูลที่ chunk ก่อนหน้าเพิ่งเขียน)
+    clearTrick2SheetData();
+
     const parentHtml =
       getParentTicketHtml_(
         auth,

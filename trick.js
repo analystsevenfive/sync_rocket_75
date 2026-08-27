@@ -122,6 +122,13 @@ function syncRocket75() {
 
   if (parentIds === null) {
 
+    // เริ่ม sync cycle ใหม่ (ไม่ใช่ resume ต่อจาก
+    // รอบที่ค้าง) ล้างข้อมูลเก่าในชีทก่อนเขียนรอบนี้
+    // เสมอ — เช็คจาก parentIds === null เพื่อไม่ให้
+    // เผลอ clear ซ้ำตอน resume ต่อ (ไม่งั้นจะลบทับ
+    // ข้อมูลที่ chunk ก่อนหน้าเพิ่งเขียนไปเอง)
+    clearSheetData();
+
     const parentHtml =
       getParentTicketHtml_(
         auth,
