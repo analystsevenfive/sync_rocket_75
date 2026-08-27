@@ -526,6 +526,30 @@ function parseSheetRows_(sheetXml, sharedStrings) {
           : null;
 
 
+      // เจอบั๊กจริง: บางเซลล์ชื่อช่างเก็บเป็น inline
+      // string (t="inlineStr", ค่าอยู่ใน <is><t>...
+      // </t></is>) แทนที่จะเป็น shared string (t="s",
+      // ค่าอยู่ใน <v>index</v>) — โค้ดเดิมมองหาแค่ <v>
+      // อย่างเดียว พอเจอ inlineStr เลยได้ค่าว่างเปล่า
+      // แล้วโดน filter ทิ้งเงียบๆ (ชื่อว่าง = ข้าม)
+      // ทำให้ได้ช่างมาแค่ ~32 คน จาก 62 คนจริง
+      if (type === 'inlineStr') {
+
+        const isMatch =
+          inner.match(
+            /<is>[\s\S]*?<t[^>]*>([\s\S]*?)<\/t>[\s\S]*?<\/is>/
+          );
+
+        cells[col] =
+          isMatch
+            ? decodeXmlEntities_(isMatch[1])
+            : '';
+
+        continue;
+
+      }
+
+
       const vMatch =
         inner.match(
           /<v>([\s\S]*?)<\/v>/
@@ -635,6 +659,8 @@ function extractGasolineReport_(blob) {
 
   const result = [];
 
+  let skippedEmptyName = 0;
+
 
   rowNumbers.forEach(function(rowNum) {
 
@@ -650,6 +676,19 @@ function extractGasolineReport_(blob) {
       name === 'ชื่อช่าง' ||
       name === 'รวม'
     ) {
+
+      // นับแยกไว้เฉพาะแถวที่ "ควรจะ" มีชื่อแต่ดัน
+      // ว่างเปล่า (ไม่ใช่แถวว่างจริงๆ /header/แถวรวม)
+      // เพื่อเตือนถ้าเกิดบั๊กแบบ inlineStr ซ้ำอีกใน
+      // อนาคต จะได้ไม่เงียบหายแบบครั้งนี้
+      if (
+        name === '' &&
+        cells['B'] !== undefined
+      ) {
+
+        skippedEmptyName++;
+
+      }
 
       return;
 
@@ -669,6 +708,19 @@ function extractGasolineReport_(blob) {
     });
 
   });
+
+
+  if (skippedEmptyName > 0) {
+
+    Logger.log(
+      'คำเตือน: ข้ามไป ' +
+      skippedEmptyName +
+      ' แถวเพราะดึงชื่อช่างไม่ได้ (ชื่อว่างเปล่า) — ' +
+      'อาจมีเซลล์ประเภทที่ parser ยังไม่รองรับ ' +
+      'ตรวจสอบผลรวมในชีทเทียบกับรายงานต้นฉบับด้วย'
+    );
+
+  }
 
 
   return result;
