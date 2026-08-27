@@ -262,6 +262,288 @@ function testGasolineExport() {
 
 
 /*************************************************
+ * INDIVIDUAL (รายบุคคล) GASOLINE EXPORT ENDPOINT
+ * (พบจาก DevTools: หน้า "รายงานค่าน้ำมัน" โหมด
+ * ประเภท=รายบุคคล ยิง POST ไปที่
+ * ajax/report_ticket/gasoline/export_cost.php
+ * (คนละตัวกับ export_cost_all.php ที่ใช้กับโหมด
+ * "ทั้งหมด") payload จริงจาก browser:
+ *   start_date, end_date, search_team=<team id ตัวเลข>,
+ *   search_staff=<staff id ตัวเลข>
+ * — UI บังคับให้เลือกทีม+ช่างทีละคน (ช่างเป็น sub
+ * ของทีม) แต่ยังไม่รู้ว่า backend บังคับด้วยไหม หรือ
+ * รับ 'x' (ทั้งหมด) ได้เหมือน export_cost_all.php —
+ * testGasolineIndividualKnown() ทดสอบด้วย id จริงที่
+ * เจอจาก network ก่อน (control กลุ่ม ควรผ่านแน่นอน)
+ * testGasolineIndividualAll() ทดสอบด้วย 'x' ทั้งคู่
+ * ว่า backend ยอมให้ดึงทุกคนพร้อมกันไหม
+ *************************************************/
+
+function buildGasolineIndividualRequest_(
+  auth,
+  startDate,
+  endDate,
+  teamId,
+  staffId
+) {
+
+  const headers = {
+
+    Origin:
+      ROCKET.BASE,
+
+    Referer:
+      ROCKET.BASE +
+      '/main/report_gasoline_cost.php',
+
+    'X-Requested-With':
+      'XMLHttpRequest'
+
+  };
+
+
+  if (auth.cookie) {
+
+    headers.Cookie =
+      auth.cookie;
+
+  }
+
+
+  return {
+
+    url:
+      ROCKET.BASE +
+      '/main/ajax/report_ticket/gasoline/export_cost.php',
+
+    method:
+      'post',
+
+    payload: {
+
+      start_date:
+        startDate,
+
+      end_date:
+        endDate,
+
+      search_team:
+        String(teamId),
+
+      search_staff:
+        String(staffId),
+
+      token:
+        auth.token,
+
+      key:
+        auth.key
+
+    },
+
+    headers:
+      headers,
+
+    muteHttpExceptions:
+      true
+
+  };
+
+}
+
+
+
+function testGasolineIndividualKnown() {
+
+  const auth =
+    rocketLogin_();
+
+
+  const request =
+    buildGasolineIndividualRequest_(
+      auth,
+      '21/08/2026',
+      '27/08/2026',
+      '6371395077',
+      '9760743697'
+    );
+
+  const res =
+    UrlFetchApp.fetch(
+      request.url,
+      request
+    );
+
+
+  Logger.log(
+    'HTTP ' +
+    res.getResponseCode()
+  );
+
+  Logger.log(
+    'Content-Type: ' +
+    res.getHeaders()['Content-Type']
+  );
+
+
+  const blob =
+    res.getBlob();
+
+  Logger.log(
+    'Blob size: ' +
+    blob.getBytes().length +
+    ' bytes'
+  );
+
+
+  const zipBlob =
+    blob.setContentType(
+      'application/zip'
+    );
+
+
+  try {
+
+    const files =
+      Utilities.unzip(zipBlob);
+
+    files.forEach(function(f) {
+
+      Logger.log(
+        'FILE: ' +
+        f.getName() +
+        ' (' +
+        f.getBytes().length +
+        ' bytes)'
+      );
+
+    });
+
+  } catch (e) {
+
+    Logger.log(
+      'ไม่ใช่ zip/xlsx: ' +
+      e.message +
+      ' — log 1000 ตัวแรกแทน:\n' +
+      blob.getDataAsString('UTF-8').substring(0, 1000)
+    );
+
+  }
+
+}
+
+
+
+function testGasolineIndividualAll() {
+
+  const auth =
+    rocketLogin_();
+
+
+  const request =
+    buildGasolineIndividualRequest_(
+      auth,
+      '21/08/2026',
+      '27/08/2026',
+      'x',
+      'x'
+    );
+
+  const res =
+    UrlFetchApp.fetch(
+      request.url,
+      request
+    );
+
+
+  Logger.log(
+    'HTTP ' +
+    res.getResponseCode()
+  );
+
+  Logger.log(
+    'Content-Type: ' +
+    res.getHeaders()['Content-Type']
+  );
+
+
+  const blob =
+    res.getBlob();
+
+  Logger.log(
+    'Blob size: ' +
+    blob.getBytes().length +
+    ' bytes'
+  );
+
+
+  const zipBlob =
+    blob.setContentType(
+      'application/zip'
+    );
+
+
+  try {
+
+    const files =
+      Utilities.unzip(zipBlob);
+
+    files.forEach(function(f) {
+
+      Logger.log(
+        'FILE: ' +
+        f.getName() +
+        ' (' +
+        f.getBytes().length +
+        ' bytes)'
+      );
+
+    });
+
+
+    const sheet1 =
+      files.filter(function(f) {
+
+        return (
+          f.getName() ===
+          'xl/worksheets/sheet1.xml'
+        );
+
+      })[0];
+
+    if (sheet1) {
+
+      const rowCount =
+        (
+          sheet1.getDataAsString('UTF-8')
+            .match(/<row\b/g) ||
+          []
+        ).length;
+
+      Logger.log(
+        'จำนวน <row> ทั้งหมดใน sheet1.xml: ' +
+        rowCount
+      );
+
+    }
+
+  } catch (e) {
+
+    Logger.log(
+      'ไม่ใช่ zip/xlsx (แปลว่า server อาจ reject ' +
+      'ค่า x ก็ได้): ' +
+      e.message +
+      ' — log 1000 ตัวแรกแทน:\n' +
+      blob.getDataAsString('UTF-8').substring(0, 1000)
+    );
+
+  }
+
+}
+
+
+
+/*************************************************
  * TEST INSPECT XLSX INTERNAL STRUCTURE
  * (.xlsx คือไฟล์ ZIP ที่ข้างในเป็น XML ธรรมดา —
  * Utilities.unzip() เป็นฟังก์ชันมาตรฐานของ Apps
@@ -880,5 +1162,171 @@ function writeGasolineSheet_(rows) {
   ).setValues(
     values
   );
+
+}
+
+
+
+/*************************************************
+ * TEST INSPECT TEAM/STAFF DROPDOWN DATA
+ * (export_cost.php ต้องการ search_team + search_staff
+ * เป็น ID ตัวเลข แต่รายงานสรุป export_cost_all.php
+ * คืนมาแค่ "ชื่อ" ไม่มี ID — ต้องหาว่าหน้า
+ * report_gasoline_cost.php เอง (ตอนโหลดแรก ก่อนกด
+ * export) ฝัง mapping ชื่อ→ID มาให้ในหน้าเลยไหม เช่น
+ * <select><option value="9760743697">จิรัสกฤต...
+ * </option></select> หรือ var teams = [...] ใน
+ * <script> — ถ้าเจอ ก็ parse เอา ID ออกมาแทนที่จะ
+ * ต้องเปิด DevTools ไล่ทีละคน
+ *************************************************/
+
+function testInspectGasolineDropdowns() {
+
+  const auth =
+    rocketLogin_();
+
+
+  const url =
+    ROCKET.BASE +
+    '/main/report_gasoline_cost.php';
+
+
+  const headers = {};
+
+  if (auth.cookie) {
+
+    headers.Cookie =
+      auth.cookie;
+
+  }
+
+
+  const res =
+    UrlFetchApp.fetch(
+      url,
+      {
+
+        method: 'get',
+
+        headers: headers,
+
+        muteHttpExceptions: true
+
+      }
+    );
+
+
+  const html =
+    res.getContentText('UTF-8');
+
+  Logger.log(
+    'HTML length: ' +
+    html.length
+  );
+
+
+  const selectRegex =
+    /<select[^>]*\bid=["']?(search_team|search_staff)["']?[^>]*>([\s\S]*?)<\/select>/g;
+
+  let selectMatch;
+
+  let foundSelect = false;
+
+
+  while (
+    (selectMatch = selectRegex.exec(html))
+    !== null
+  ) {
+
+    foundSelect = true;
+
+    const selectId =
+      selectMatch[1];
+
+    const optionsHtml =
+      selectMatch[2];
+
+
+    const optionRegex =
+      /<option[^>]*\bvalue=["']?([^"'>\s]*)["']?[^>]*>([\s\S]*?)<\/option>/g;
+
+    let optionMatch;
+
+    let count = 0;
+
+
+    Logger.log(
+      '=== <select id="' +
+      selectId +
+      '"> ==='
+    );
+
+
+    while (
+      (optionMatch = optionRegex.exec(optionsHtml))
+      !== null
+    ) {
+
+      count++;
+
+      if (count <= 15) {
+
+        Logger.log(
+          '  value="' +
+          optionMatch[1] +
+          '" text="' +
+          cleanText_(optionMatch[2]) +
+          '"'
+        );
+
+      }
+
+    }
+
+
+    Logger.log(
+      selectId +
+      ' total options: ' +
+      count
+    );
+
+  }
+
+
+  if (!foundSelect) {
+
+    Logger.log(
+      'ไม่เจอ <select id="search_team"/"search_staff"> ' +
+      'ตรงๆ — ลองหา data-* attribute หรือ JS array แทน'
+    );
+
+
+    const scriptDataMatches =
+      html.match(
+        /var\s+(team|staff|technician)\w*\s*=\s*\[[\s\S]{0,500}/gi
+      );
+
+    if (scriptDataMatches) {
+
+      scriptDataMatches.forEach(function(m) {
+
+        Logger.log(
+          'พบ JS array candidate:\n' +
+          m.substring(0, 500)
+        );
+
+      });
+
+    } else {
+
+      Logger.log(
+        'ไม่เจอ JS array ที่มีคำว่า team/staff/technician ' +
+        'เลย — log 3000 ตัวแรกของหน้าไว้ดูแทน:\n' +
+        html.substring(0, 3000).replace(/></g, '>\n<')
+      );
+
+    }
+
+  }
 
 }
