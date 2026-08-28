@@ -1,0 +1,20 @@
+name: PoC - Rocket75 Login Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run login PoC
+        env:
+          ROCKET_USERNAME: ${{ secrets.ROCKET_USERNAME }}
+          ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
+        run: node github_action/poc-login.js
