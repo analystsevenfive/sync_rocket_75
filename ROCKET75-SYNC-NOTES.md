@@ -243,7 +243,7 @@ request เดียว ไม่ต้อง chunk/resume
 `syncTicketStage()` ดึงแค่หน้า **parent** (`ticket_view.php?id=X`) หน้าเดียวต่อ ticket ไม่ต้อง
 ไปต่อ sub ticket เลย เพราะข้อมูล stage ทั้งหมดอยู่ในหน้านี้แล้ว ใช้ Script Properties prefix
 `SYNC3_*` — เนื่องจากหน้า parent หนักกว่าหน้า sub ticket detail มาก (~350KB/หน้า) เลยใช้ chunk
-เล็กกว่า sync อื่น (`PARENT_CHUNK = 10`)
+เล็กกว่า sync อื่น (`PARENT_CHUNK = 30`)
 
 คอลัมน์: `Job No. | Overall Status | Current Job Type | Active Stages | Current Stage |
 Rocket URL`
@@ -313,7 +313,7 @@ skip-if-closed** ที่นี่ (ดูข้อ 7 ด้านบนสำ�
   ด้านบน)
 - หน้า `ticket_view.php` (ใช้ใน `stage.js`) หนักกว่ามาก **~350KB/หน้า** (เทียบกับหน้า sub ticket
   detail ที่ไม่กี่ KB) เพราะโหลดทั้ง sidebar/menu ของทั้งระบบมาด้วย — เป็นเหตุผลที่ใช้ chunk เล็กกว่า
-  (`PARENT_CHUNK = 10`)
+  (`PARENT_CHUNK = 30`)
 
 ## งานที่ยังไม่เสร็จ / ต้องทำต่อ
 

@@ -340,8 +340,10 @@ function syncTrick2() {
     {};
 
 
+  // 20 → 35 → 100 (เหตุผลเดียวกับ trick.js —
+  // ถอยกลับมา 35 ถ้า error rate สูงขึ้น)
   const PARENT_CHUNK =
-    20;
+    100;
 
 
   while (
@@ -554,8 +556,10 @@ function syncTrick2() {
   const trick2Ctx =
     buildTrick2RowIndex_();
 
+  // 15 → 30 → 100 (เหตุผลเดียวกับ trick.js —
+  // ถอยกลับมา 30 ถ้า error rate สูงขึ้น)
   const SUB_CHUNK =
-    15;
+    100;
 
 
   while (

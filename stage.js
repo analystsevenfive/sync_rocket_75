@@ -1437,9 +1437,12 @@ function syncTicketStage() {
 
   // หน้า parent หนักกว่าหน้า sub ticket detail มาก
   // (~350KB ต่อหน้า เทียบกับไม่กี่ KB) เลยใช้ chunk
-  // เล็กกว่า syncRocket75/syncTrick2
+  // เล็กกว่า syncRocket75/syncTrick2 เสมอ — 10 → 15 →
+  // 30 (ไม่ขยับไป 100 เหมือนอีก 2 ไฟล์ เพราะ 100 หน้า x
+  // 350KB = ~35MB โหลดพร้อมกันหนักเกินไป เสี่ยงเกินคุ้ม
+  // ถอยกลับมา 15 ถ้า error rate สูงขึ้น)
   const PARENT_CHUNK =
-    10;
+    30;
 
 
   while (

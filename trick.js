@@ -190,8 +190,11 @@ function syncRocket75() {
     [];
 
 
+  // 20 → 35 → 100 (ทดสอบรอบ 35 แล้วไม่มี error เลย
+  // เลยขยับต่อ — ถ้า log เห็น error/fetchAll ล้มเหลว
+  // เพิ่มขึ้นชัดเจน ให้ถอยกลับมาที่ 35)
   const PARENT_CHUNK =
-    20;
+    100;
 
 
   while (
@@ -419,8 +422,10 @@ function syncRocket75() {
   const ticketCtx =
     buildTicketRowIndex_();
 
+  // 15 → 30 → 100 (เหตุผลเดียวกับ PARENT_CHUNK
+  // ด้านบน — ถอยกลับมา 30 ถ้า error rate สูงขึ้น)
   const SUB_CHUNK =
-    15;
+    100;
 
 
   while (
@@ -2156,7 +2161,22 @@ function getClosedSubTicketIds_() {
  * (เช่นเกิน 3 เดือน) จะไม่โดนแตะต้องอีกถ้าไม่ลบเอง เลย
  * ต้องลบทิ้งแยกต่างหาก เทียบจาก Ticket ID ในชีทกับ
  * validIds (sub ticket ทั้งหมดที่เจอจริงในช่วงวันที่
- * ปัจจุบัน) ลบจากแถวล่างขึ้นบนกันเลขแถวเลื่อน)
+ * ปัจจุบัน)
+ *
+ * เจอบั๊กจริง: เดิมลบทีละแถวด้วย sheet.deleteRow() วน
+ * ลูป — ถ้ามีหลายร้อยแถวต้องลบ (เช่น ข้อมูลเก่าตั้งแต่
+ * ตอน range ยังเป็น 1 สัปดาห์) แต่ละ call มี latency
+ * ของตัวเอง รวมกันช้ามาก (สังเกตจาก log จริง: ช่วง
+ * ระหว่าง "SUB TICKETS" กับ "เขียนแล้ว" ของ chunk แรก
+ * ห่างกันหลายสิบวินาที) **วิธีแก้:** รวมแถวที่ต้องลบ
+ * เป็นช่วงต่อเนื่อง (contiguous range) แล้วยิง
+ * Sheets.Spreadsheets.batchUpdate() ครั้งเดียวจบด้วย
+ * deleteDimension หลายช่วง แทนที่จะเรียก deleteRow()
+ * ทีละแถว — ต้องประมวลผลจากแถวเลขมากไปน้อยเสมอ (ลบ
+ * ช่วงบนสุดก่อน) ไม่งั้นเลขแถวของช่วงที่เหลือจะเลื่อน
+ * ผิดตอน request ถัดไปทำงาน (Sheets API รัน request
+ * ในอาร์เรย์ตามลำดับ ผลจาก request ก่อนหน้ามีผลกับ
+ * request ถัดไปเสมอ)
  *************************************************/
 
 function pruneStaleTicketRows_(
@@ -2210,19 +2230,109 @@ function pruneStaleTicketRows_(
   }
 
 
-  rowsToDelete
-    .sort(function(a, b) {
+  if (rowsToDelete.length === 0) {
 
-      return b - a;
+    return 0;
 
-    })
-    .forEach(function(rowNum) {
+  }
 
-      sheet.deleteRow(
-        rowNum
-      );
+
+  rowsToDelete.sort(function(a, b) {
+
+    return b - a;
+
+  });
+
+
+  // รวมแถวติดกันเป็นช่วงเดียว (เช่น 10,9,8 → ช่วง
+  // เดียว [8,10]) ลดจำนวน request ลงอีกถ้าแถวที่ลบ
+  // อยู่ติดกันเป็นกลุ่ม
+  const ranges = [];
+
+  let rangeStart =
+    rowsToDelete[0];
+
+  let rangeEnd =
+    rowsToDelete[0];
+
+
+  for (
+    let i = 1;
+    i < rowsToDelete.length;
+    i++
+  ) {
+
+    const row =
+      rowsToDelete[i];
+
+    if (row === rangeEnd - 1) {
+
+      rangeEnd = row;
+
+    } else {
+
+      ranges.push([
+        rangeEnd,
+        rangeStart
+      ]);
+
+      rangeStart = row;
+      rangeEnd = row;
+
+    }
+
+  }
+
+  ranges.push([
+    rangeEnd,
+    rangeStart
+  ]);
+
+
+  const sheetId =
+    sheet.getSheetId();
+
+  const requests =
+    ranges.map(function(range) {
+
+      return {
+
+        deleteDimension: {
+
+          range: {
+
+            sheetId: sheetId,
+
+            dimension: 'ROWS',
+
+            // GridRange เป็น 0-indexed, startIndex
+            // รวม, endIndex ไม่รวม — range เก็บเป็น
+            // [แถวเริ่ม, แถวจบ] แบบ 1-indexed รวมทั้งคู่
+            startIndex:
+              range[0] - 1,
+
+            endIndex:
+              range[1]
+
+          }
+
+        }
+
+      };
 
     });
+
+
+  Sheets.Spreadsheets.batchUpdate(
+    {
+
+      requests: requests
+
+    },
+    SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getId()
+  );
 
 
   return rowsToDelete.length;
