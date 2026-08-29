@@ -17,7 +17,10 @@
 
 const rocket = require('./lib/rocket-client');
 
-const SAMPLE_SIZE = 200;
+// รอบก่อน scan 80 parent ได้ 54 sub ticket (~0.68 ต่อ
+// parent) — ตั้ง 60 ต่อชุด (ต้องการ 120 รวม) ให้พอดีกับ
+// scan 250 parent ด้านล่างแบบมี margin
+const SAMPLE_SIZE = 60;
 const TOTAL_CONCURRENCY = 30;
 
 function sleep(ms) {
@@ -74,32 +77,45 @@ async function main() {
   console.log('PARENT TICKETS ทั้งหมด: ' + parentIds.length);
 
   const checkRepairResults = await rocket.mapConcurrent(
-    parentIds.slice(0, 80), 30,
+    parentIds.slice(0, 250), 30,
     async function(parentId) {
       const html = await rocket.getCheckRepairHtml(parentId, authA);
       return rocket.extractCheckRepairIds(html);
     }
   );
 
-  let subIds = [];
+  let allSubIds = [];
   checkRepairResults.forEach(function(r) {
     if (Array.isArray(r)) {
-      subIds = subIds.concat(r);
+      allSubIds = allSubIds.concat(r);
     }
   });
-  subIds = [...new Set(subIds)].slice(0, SAMPLE_SIZE);
-  console.log('SAMPLE SUB TICKETS สำหรับทดสอบความเร็ว: ' + subIds.length);
+  allSubIds = [...new Set(allSubIds)];
+  console.log('SUB TICKETS ที่เจอทั้งหมด (จาก parent ที่ scan): ' + allSubIds.length);
 
-  if (subIds.length < 20) {
-    throw new Error('sample น้อยเกินไป (' + subIds.length + ' ใบ) — ลองเพิ่มจำนวน parent ที่ scan ในโค้ด');
+  // สำคัญ: BASELINE กับ MULTI-SESSION ต้องใช้ตั๋วคนละชุด
+  // ไม่ทับกันเลย — ถ้าใช้ชุดเดียวกันซ้ำ รอบสองจะเร็วขึ้น
+  // เพราะ cache ฝั่งเซิร์ฟเวอร์/DB (เพิ่งเจอปัญหานี้จริงจาก
+  // การรันครั้งแรก ได้ 14.2x ซึ่งเกินกว่าที่ session-lock
+  // เพียงอย่างเดียวจะอธิบายได้ — คือ cache effect ปนอยู่)
+  const neededTotal = SAMPLE_SIZE * 2;
+  if (allSubIds.length < neededTotal) {
+    throw new Error(
+      'sub ticket ไม่พอสำหรับแบ่ง 2 ชุดไม่ทับกัน (ได้ ' + allSubIds.length +
+      ' ต้องการอย่างน้อย ' + neededTotal + ') ลองเพิ่มจำนวน parent ที่ scan ในโค้ด'
+    );
   }
+
+  const baselineSample = allSubIds.slice(0, SAMPLE_SIZE);
+  const multiSample = allSubIds.slice(SAMPLE_SIZE, SAMPLE_SIZE * 2);
+  console.log('BASELINE sample: ' + baselineSample.length + ' ใบ / MULTI-SESSION sample: ' + multiSample.length + ' ใบ (คนละชุด ไม่ทับกัน)');
 
   // ==========================================
   // เช็คว่า session A ยังใช้ได้ไหมหลัง login session B
   // ==========================================
 
   console.log('--- เช็ค session A หลัง login session B ---');
-  const stillValid = await isSessionValid(authA, subIds[0]);
+  const stillValid = await isSessionValid(authA, allSubIds[0]);
 
   if (!stillValid) {
     console.log('ผล: session A ใช้ไม่ได้แล้ว! (โดน invalidate ตอน login session B ด้วย account เดียวกัน)');
@@ -114,25 +130,26 @@ async function main() {
 
   console.log('--- BASELINE: 1 session, concurrency ' + TOTAL_CONCURRENCY + ' ---');
   const t1Start = Date.now();
-  const baseline = await fetchBatch(subIds, authA, TOTAL_CONCURRENCY);
+  const baseline = await fetchBatch(baselineSample, authA, TOTAL_CONCURRENCY);
   const t1 = Date.now() - t1Start;
   console.log(
     'BASELINE: ' + (t1 / 1000).toFixed(1) + 's — สำเร็จ ' +
-    baseline.successCount + '/' + subIds.length
+    baseline.successCount + '/' + baselineSample.length
   );
 
   await sleep(3000);
 
   // ==========================================
   // MULTI-SESSION: 2 sessions คู่ขนาน, concurrency 15 ต่อ session
+  // (คนละตั๋วกับ BASELINE ทั้งหมด — กัน cache effect)
   // ==========================================
 
   const perSessionConcurrency = TOTAL_CONCURRENCY / 2;
   console.log('--- MULTI-SESSION: 2 sessions x concurrency ' + perSessionConcurrency + ' พร้อมกัน ---');
 
-  const half = Math.ceil(subIds.length / 2);
-  const groupA = subIds.slice(0, half);
-  const groupB = subIds.slice(half);
+  const half = Math.ceil(multiSample.length / 2);
+  const groupA = multiSample.slice(0, half);
+  const groupB = multiSample.slice(half);
 
   const t2Start = Date.now();
   const [resA, resB] = await Promise.all([
@@ -143,7 +160,7 @@ async function main() {
   const multiSuccess = resA.successCount + resB.successCount;
   console.log(
     'MULTI-SESSION: ' + (t2 / 1000).toFixed(1) + 's — สำเร็จ ' +
-    multiSuccess + '/' + subIds.length
+    multiSuccess + '/' + multiSample.length
   );
 
   // ==========================================
