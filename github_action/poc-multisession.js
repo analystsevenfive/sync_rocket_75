@@ -1,0 +1,169 @@
+/*************************************************
+ * POC — ทดสอบ multiple login sessions ด้วย account
+ * เดียวกัน (ยังไม่ขอ account เพิ่ม)
+ *
+ * ตอบ 2 คำถาม:
+ *   1. login ซ้ำด้วย account เดียวกันแล้ว session เก่า
+ *      (A) ยังใช้ได้อยู่ไหม หรือโดน invalidate ทันที
+ *   2. ถ้ายังใช้ได้ทั้งคู่ — แบ่งงานไปคนละ session แล้ว
+ *      รันคู่ขนานกัน เร็วขึ้นจริงไหม เทียบกับ 1 session
+ *      concurrency เท่าเดิม (ทดสอบทฤษฎี PHP session-lock
+ *      serialization ที่สงสัยว่าเป็นสาเหตุที่ทำให้
+ *      sync-tickets.js ช้าแม้เพิ่ม concurrency)
+ *
+ * รันแล้วไม่เขียนอะไรลง Google Sheet เลย แค่ fetch มา
+ * นับเวลา/ผลลัพธ์ log ออกมาให้ดู
+ *************************************************/
+
+const rocket = require('./lib/rocket-client');
+
+const SAMPLE_SIZE = 200;
+const TOTAL_CONCURRENCY = 30;
+
+function sleep(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
+async function isSessionValid(auth, testTicketId) {
+  try {
+    const html = await rocket.getTicketDetailHtml(testTicketId, auth);
+    const ticket = rocket.parseTicketDetail(html, testTicketId);
+    return Boolean(ticket.ticketNo || ticket.status);
+  } catch (e) {
+    return false;
+  }
+}
+
+// retries=0 ตั้งใจ — ทดสอบเวลาให้ยุติธรรม ไม่อยากให้ retry
+// (ที่เพิ่งเพิ่มใน mapConcurrent) มาบิดผลเวลาที่วัดได้
+async function fetchBatch(subIds, auth, concurrency) {
+  const results = await rocket.mapConcurrent(subIds, concurrency, async function(subId) {
+    const html = await rocket.getTicketDetailHtml(subId, auth);
+    const ticket = rocket.parseTicketDetail(html, subId);
+    if (!ticket.ticketNo && !ticket.status) {
+      throw new Error('parse ไม่สำเร็จ');
+    }
+    return ticket;
+  }, 0);
+
+  const successCount = results.filter(function(r) { return r && !r.__error; }).length;
+  return { successCount: successCount, errorCount: results.length - successCount };
+}
+
+async function main() {
+
+  console.log('========== POC: MULTIPLE LOGIN SESSIONS (account เดียวกัน) ==========');
+
+  console.log('Login session A...');
+  const authA = await rocket.rocketLogin();
+  console.log('Session A OK');
+
+  await sleep(1000);
+
+  console.log('Login session B (account เดียวกัน)...');
+  const authB = await rocket.rocketLogin();
+  console.log('Session B OK');
+
+  // ==========================================
+  // ดึง sub ticket ID จริงมาทำ sample เทียบเวลา
+  // ==========================================
+
+  const range = rocket.computeLast3MonthsRangeBangkok();
+  const parentHtml = await rocket.getParentTicketHtml(authA, range.start, range.end);
+  const parentIds = rocket.extractParentTicketIds(parentHtml);
+  console.log('PARENT TICKETS ทั้งหมด: ' + parentIds.length);
+
+  const checkRepairResults = await rocket.mapConcurrent(
+    parentIds.slice(0, 80), 30,
+    async function(parentId) {
+      const html = await rocket.getCheckRepairHtml(parentId, authA);
+      return rocket.extractCheckRepairIds(html);
+    }
+  );
+
+  let subIds = [];
+  checkRepairResults.forEach(function(r) {
+    if (Array.isArray(r)) {
+      subIds = subIds.concat(r);
+    }
+  });
+  subIds = [...new Set(subIds)].slice(0, SAMPLE_SIZE);
+  console.log('SAMPLE SUB TICKETS สำหรับทดสอบความเร็ว: ' + subIds.length);
+
+  if (subIds.length < 20) {
+    throw new Error('sample น้อยเกินไป (' + subIds.length + ' ใบ) — ลองเพิ่มจำนวน parent ที่ scan ในโค้ด');
+  }
+
+  // ==========================================
+  // เช็คว่า session A ยังใช้ได้ไหมหลัง login session B
+  // ==========================================
+
+  console.log('--- เช็ค session A หลัง login session B ---');
+  const stillValid = await isSessionValid(authA, subIds[0]);
+
+  if (!stillValid) {
+    console.log('ผล: session A ใช้ไม่ได้แล้ว! (โดน invalidate ตอน login session B ด้วย account เดียวกัน)');
+    console.log('สรุป: rocket75.com อนุญาต 1 session ต่อ 1 account เท่านั้น — ต้องขอ account จริงเพิ่มถึงจะทำ multi-session ได้');
+    return;
+  }
+  console.log('ผล: session A ยังใช้ได้ปกติ ไม่โดน invalidate — ไปต่อขั้นวัดความเร็ว');
+
+  // ==========================================
+  // BASELINE: 1 session, concurrency 30
+  // ==========================================
+
+  console.log('--- BASELINE: 1 session, concurrency ' + TOTAL_CONCURRENCY + ' ---');
+  const t1Start = Date.now();
+  const baseline = await fetchBatch(subIds, authA, TOTAL_CONCURRENCY);
+  const t1 = Date.now() - t1Start;
+  console.log(
+    'BASELINE: ' + (t1 / 1000).toFixed(1) + 's — สำเร็จ ' +
+    baseline.successCount + '/' + subIds.length
+  );
+
+  await sleep(3000);
+
+  // ==========================================
+  // MULTI-SESSION: 2 sessions คู่ขนาน, concurrency 15 ต่อ session
+  // ==========================================
+
+  const perSessionConcurrency = TOTAL_CONCURRENCY / 2;
+  console.log('--- MULTI-SESSION: 2 sessions x concurrency ' + perSessionConcurrency + ' พร้อมกัน ---');
+
+  const half = Math.ceil(subIds.length / 2);
+  const groupA = subIds.slice(0, half);
+  const groupB = subIds.slice(half);
+
+  const t2Start = Date.now();
+  const [resA, resB] = await Promise.all([
+    fetchBatch(groupA, authA, perSessionConcurrency),
+    fetchBatch(groupB, authB, perSessionConcurrency)
+  ]);
+  const t2 = Date.now() - t2Start;
+  const multiSuccess = resA.successCount + resB.successCount;
+  console.log(
+    'MULTI-SESSION: ' + (t2 / 1000).toFixed(1) + 's — สำเร็จ ' +
+    multiSuccess + '/' + subIds.length
+  );
+
+  // ==========================================
+  // สรุปผล
+  // ==========================================
+
+  const speedup = t1 / t2;
+  console.log('=======================================');
+  console.log('BASELINE      : ' + (t1 / 1000).toFixed(1) + 's');
+  console.log('MULTI-SESSION : ' + (t2 / 1000).toFixed(1) + 's');
+  console.log('เร็วขึ้น        : ' + speedup.toFixed(2) + 'x');
+  console.log(
+    speedup > 1.5
+      ? '=> ทฤษฎี session-lock น่าจะถูก คุ้มค่าที่จะทำ multi-session จริงจัง (แต่ต้องขอ account เพิ่มเพราะ account เดียวมี session เดียว)'
+      : '=> ไม่ช่วยเท่าที่คาด bottleneck อาจไม่ใช่ session-lock ล้วนๆ (อาจเป็น per-request render time หรือ rate-limit ระดับอื่น)'
+  );
+
+}
+
+main().catch(function(err) {
+  console.error('ทดสอบล้มเหลว:', err);
+  process.exit(1);
+});
