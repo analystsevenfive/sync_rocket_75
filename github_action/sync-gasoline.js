@@ -31,10 +31,38 @@ const TICKETS_SHEET_NAME = 'Tickets';
 const GASOLINE_SHEET_NAME = 'Gasoline Detail (Test)';
 const RATE_PER_JOB = 80;
 
-// ช่วงวันที่เดียวกับที่ทดสอบบน Apps Script — ตั้งตรงนี้
-// ไว้ก่อน ยังไม่ทำเป็น rolling window อัตโนมัติ
-const START_DATE = '30/07/2026';
-const END_DATE = '29/08/2026';
+const GASOLINE_WINDOW_DAYS = 30;
+
+// เดิม hardcode วันที่ไว้ตายตัว ('30/07/2026'-'29/08/2026')
+// ใช้ทดสอบครั้งแรกได้ แต่ตั้ง cron รันทุกชั่วโมงไม่ได้
+// เพราะช่วงวันที่จะไม่ขยับตามเวลาจริงเลย — เปลี่ยนเป็น
+// rolling N วันล่าสุด (ตามเวลากรุงเทพ) แทน
+function computeRollingRangeBangkok(daysBack) {
+
+  function bangkokDateParts(date) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Bangkok',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(date);
+    const get = function(t) { return Number(parts.find(function(p) { return p.type === t; }).value); };
+    return { year: get('year'), month: get('month'), day: get('day') };
+  }
+
+  function fmt(year, month, day) {
+    const dd = String(day).padStart(2, '0');
+    const mm = String(month).padStart(2, '0');
+    return dd + '/' + mm + '/' + year;
+  }
+
+  const now = bangkokDateParts(new Date());
+  const end = fmt(now.year, now.month, now.day);
+
+  const startDate = new Date(now.year, now.month - 1, now.day - daysBack);
+  const start = fmt(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate());
+
+  return { start: start, end: end };
+
+}
 
 // 4 ทีมเดียวกับที่ยืนยันแล้วบน Apps Script
 const GASOLINE_TEAM_IDS = [
@@ -144,11 +172,11 @@ async function rocketLogin() {
  * extractGasolineTeamRows_ ใน gasoline.js)
  *************************************************/
 
-async function fetchGasolineTeamXlsx(auth, teamId) {
+async function fetchGasolineTeamXlsx(auth, teamId, range) {
 
   const body = new URLSearchParams();
-  body.set('start_date', START_DATE);
-  body.set('end_date', END_DATE);
+  body.set('start_date', range.start);
+  body.set('end_date', range.end);
   body.set('search_team', String(teamId));
   body.set('search_staff', 'x');
   body.set('token', auth.token);
@@ -527,10 +555,13 @@ async function main() {
   const auth = await rocketLogin();
   console.log('LOGIN OK');
 
+  const range = computeRollingRangeBangkok(GASOLINE_WINDOW_DAYS);
+  console.log('ช่วงวันที่: ' + range.start + ' - ' + range.end);
+
   let rows = [];
 
   for (const team of GASOLINE_TEAM_IDS) {
-    const xlsxBuffer = await fetchGasolineTeamXlsx(auth, team.id);
+    const xlsxBuffer = await fetchGasolineTeamXlsx(auth, team.id, range);
     const teamRows = extractGasolineTeamRows(xlsxBuffer);
     console.log('ทีม ' + team.label + ': พบ ' + teamRows.length + ' แถว');
     rows = rows.concat(teamRows);

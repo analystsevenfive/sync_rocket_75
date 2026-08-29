@@ -2,6 +2,12 @@ name: Sync Gasoline Detail
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
+
+concurrency:
+  group: sync-gasoline
+  cancel-in-progress: false
 
 jobs:
   sync:

@@ -2,6 +2,12 @@ name: Sync Trick2
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
+
+concurrency:
+  group: sync-trick2
+  cancel-in-progress: false
 
 jobs:
   sync:
