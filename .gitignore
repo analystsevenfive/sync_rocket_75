@@ -1,0 +1,9 @@
+# Google service account key files — private key ห้าม commit เข้า git เด็ดขาด
+# (เก็บไว้แค่ใน GitHub Secrets เป็น GOOGLE_SERVICE_ACCOUNT_KEY เท่านั้น)
+sync-rocket-507005-06713c54ae3e.json
+*-service-account*.json
+*serviceaccount*.json
+*.pem
+
+# Node.js
+node_modules/
