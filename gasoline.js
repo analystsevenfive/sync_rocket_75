@@ -1269,7 +1269,7 @@ function testInspectGasolineDropdowns() {
 
       count++;
 
-      if (count <= 15) {
+      if (count <= 30) {
 
         Logger.log(
           '  value="' +
@@ -1328,5 +1328,1056 @@ function testInspectGasolineDropdowns() {
     }
 
   }
+
+}
+
+
+
+/*************************************************
+ * GASOLINE — EXPORT ต่อทีม (export_cost_team.php)
+ * (พบว่าหน้ารายงานเปลี่ยนรูปแบบมาเป็น "สรุปรายได้
+ * ช่างรายบุคคล" แยกต่อทีม — payload จริงจาก DevTools:
+ *   start_date, end_date, search_team=<team id ตัวเลข>,
+ *   search_staff=x
+ * ต่างจาก export_cost.php (รายบุคคลเดิม) ตรงที่
+ * search_staff='x' ใช้ได้จริง (ได้ทุกช่างในทีมนั้น
+ * มาในไฟล์เดียว) ไม่ต้องรู้ staff id เป็นรายคน — มีแค่
+ * 4 ทีมทั้งหมด (ตามที่ผู้ใช้บอก) แปลว่า sync ให้ครบ
+ * ทุกช่างทำได้ด้วย 4 request เท่านั้น (ไม่ใช่ ~62
+ * request ต่อช่างแบบที่กังวลไว้แต่แรก)
+ *
+ * โครงสร้างตาราง (จากสกรีนช็อตที่ผู้ใช้ส่งมา) มีแถว
+ * หัวเรื่อง/ช่วงวันที่/ชื่อทีมนำหน้าคอลัมน์จริงอีก 3
+ * แถว (ต่างจาก export_cost_all.php ที่ header อยู่
+ * แถว 4 ตรงๆ) ต้อง inspect โครงสร้าง XML จริงก่อน
+ * เขียน parser (ดู testInspectGasolineTeamXlsx())
+ *
+ * ทดสอบแค่ทีมเดียวก่อนตามที่ผู้ใช้ขอ — teamId นี้คือ
+ * "ช่าง A (BK)" จาก payload จริงที่ capture มา
+ *************************************************/
+
+function buildGasolineTeamExportRequest_(
+  auth,
+  startDate,
+  endDate,
+  teamId
+) {
+
+  const headers = {
+
+    Origin:
+      ROCKET.BASE,
+
+    Referer:
+      ROCKET.BASE +
+      '/main/report_gasoline_cost.php',
+
+    'X-Requested-With':
+      'XMLHttpRequest'
+
+  };
+
+
+  if (auth.cookie) {
+
+    headers.Cookie =
+      auth.cookie;
+
+  }
+
+
+  return {
+
+    url:
+      ROCKET.BASE +
+      '/main/ajax/report_ticket/gasoline/export_cost_team.php',
+
+    method:
+      'post',
+
+    payload: {
+
+      start_date:
+        startDate,
+
+      end_date:
+        endDate,
+
+      search_team:
+        String(teamId),
+
+      search_staff:
+        'x',
+
+      token:
+        auth.token,
+
+      key:
+        auth.key
+
+    },
+
+    headers:
+      headers,
+
+    muteHttpExceptions:
+      true
+
+  };
+
+}
+
+
+
+function testGasolineTeamExport() {
+
+  const auth =
+    rocketLogin_();
+
+
+  const teamId =
+    '8002371330';
+
+  const request =
+    buildGasolineTeamExportRequest_(
+      auth,
+      '30/07/2026',
+      '29/08/2026',
+      teamId
+    );
+
+  const res =
+    UrlFetchApp.fetch(
+      request.url,
+      request
+    );
+
+
+  Logger.log(
+    'HTTP ' +
+    res.getResponseCode()
+  );
+
+  Logger.log(
+    'Content-Type: ' +
+    res.getHeaders()['Content-Type']
+  );
+
+
+  const blob =
+    res.getBlob();
+
+  Logger.log(
+    'Blob size: ' +
+    blob.getBytes().length +
+    ' bytes'
+  );
+
+
+  const zipBlob =
+    blob.setContentType(
+      'application/zip'
+    );
+
+
+  try {
+
+    const files =
+      Utilities.unzip(zipBlob);
+
+    files.forEach(function(f) {
+
+      Logger.log(
+        'FILE: ' +
+        f.getName() +
+        ' (' +
+        f.getBytes().length +
+        ' bytes)'
+      );
+
+    });
+
+  } catch (e) {
+
+    Logger.log(
+      'ไม่ใช่ zip/xlsx: ' +
+      e.message +
+      ' — log 1000 ตัวแรกแทน:\n' +
+      blob.getDataAsString('UTF-8').substring(0, 1000)
+    );
+
+  }
+
+}
+
+
+
+function testInspectGasolineTeamXlsx() {
+
+  const auth =
+    rocketLogin_();
+
+
+  const teamId =
+    '8002371330';
+
+  const request =
+    buildGasolineTeamExportRequest_(
+      auth,
+      '30/07/2026',
+      '29/08/2026',
+      teamId
+    );
+
+  const res =
+    UrlFetchApp.fetch(
+      request.url,
+      request
+    );
+
+
+  const blob =
+    res.getBlob()
+      .setContentType('application/zip');
+
+  const files =
+    Utilities.unzip(blob);
+
+
+  const sheet1 =
+    files.filter(function(f) {
+
+      return (
+        f.getName() ===
+        'xl/worksheets/sheet1.xml'
+      );
+
+    })[0];
+
+  const shared =
+    files.filter(function(f) {
+
+      return (
+        f.getName() ===
+        'xl/sharedStrings.xml'
+      );
+
+    })[0];
+
+
+  if (shared) {
+
+    Logger.log(
+      'SHARED STRINGS XML:\n' +
+      shared
+        .getDataAsString('UTF-8')
+    );
+
+  }
+
+
+  if (sheet1) {
+
+    Logger.log(
+      'SHEET1 XML:\n' +
+      sheet1
+        .getDataAsString('UTF-8')
+        .replace(/></g, '>\n<')
+    );
+
+  }
+
+}
+
+
+
+/*************************************************
+ * PARSE + SYNC ทดสอบ export_cost_team.php (ทีมเดียว)
+ * (ยืนยันโครงสร้างจริงจาก testInspectGasolineTeamXlsx()
+ * log แล้ว:
+ *   แถว 1 = ชื่อรายงาน "สรุปรายได้ช่างรายบุคคล"
+ *   แถว 2 = ช่วงวันที่
+ *   แถว 3 = ชื่อทีม เช่น " ช่าง A (BK)"
+ *   (ทั้ง 3 แถวนี้มีค่าแค่คอลัมน์ A เท่านั้น — เหมือน
+ *   merge cell แต่จริงๆ คอลัมน์อื่นว่างเปล่าธรรมดา)
+ *   แถว 4 = header จริง: A=วันที่ถึงหน้างาน,
+ *     B=เลขที่ใบงาน, C=เลขที่งาน (BK), D=ชื่อลูกค้า,
+ *     E=ชื่อช่าง, F=ผลรวม, G=หมายเหตุ
+ *   แถว 5+ = ข้อมูลจริง 1 แถว/1 ticket — B (เลขที่
+ *     ใบงาน) บางแถวว่างเปล่าได้ (เจอจริงจากตัวอย่าง)
+ *
+ * หา header row จากข้อความจริง ("วันที่ถึงหน้างาน")
+ * ไม่ยึดเลขแถวตายตัว เผื่อจำนวนแถว title เปลี่ยนใน
+ * อนาคต — คอลัมน์ "ผลรวม" (F) เป็น 0/1 บอกว่า ticket
+ * นี้นับเป็นงานที่ได้ค่าน้ำมันไหม (0 = ไม่นับ เช่น
+ * "ปิดงานล่าช้า"/"ลงรายละเอียดใบงานไม่ครบถ้วน") ใช้
+ * รวมยอดจริงได้ตรงกับ Gasoline sheet (aggregate)
+ * ที่มีอยู่แล้ว: SUM(ผลรวม) ต่อช่าง = Number of Jobs
+ * Received, × 70 = Amount Received
+ *************************************************/
+
+function extractGasolineTeamRows_(blob) {
+
+  const zipBlob =
+    blob.setContentType(
+      'application/zip'
+    );
+
+  const files =
+    Utilities.unzip(zipBlob);
+
+
+  const sheetFile =
+    files.filter(function(f) {
+
+      return (
+        f.getName() ===
+        'xl/worksheets/sheet1.xml'
+      );
+
+    })[0];
+
+  const sharedFile =
+    files.filter(function(f) {
+
+      return (
+        f.getName() ===
+        'xl/sharedStrings.xml'
+      );
+
+    })[0];
+
+
+  const sharedStrings =
+    sharedFile
+      ? parseSharedStrings_(
+          sharedFile.getDataAsString('UTF-8')
+        )
+      : [];
+
+  const rows =
+    parseSheetRows_(
+      sheetFile.getDataAsString('UTF-8'),
+      sharedStrings
+    );
+
+
+  const rowNumbers =
+    Object.keys(rows)
+      .map(Number)
+      .sort(function(a, b) {
+
+        return a - b;
+
+      });
+
+
+  let headerRowNum = null;
+
+  rowNumbers.forEach(function(rowNum) {
+
+    if (
+      headerRowNum === null &&
+      rows[rowNum]['A'] === 'วันที่ถึงหน้างาน'
+    ) {
+
+      headerRowNum = rowNum;
+
+    }
+
+  });
+
+
+  if (headerRowNum === null) {
+
+    throw new Error(
+      'ไม่เจอแถว header ("วันที่ถึงหน้างาน") ในรายงานนี้ ' +
+      '— โครงสร้างอาจเปลี่ยนไปจากที่เคย inspect ไว้'
+    );
+
+  }
+
+
+  // ชื่อทีม (เช่น " ช่าง A (BK)") อยู่แถวก่อนหน้า header
+  // ทันที (แถว 3 ตามที่ inspect ไว้) — ดึงจากตัวรายงาน
+  // เองแทนที่จะ hardcode ชื่อทีม เผื่อเปลี่ยนชื่อทีมทีหลัง
+  const teamNameRow =
+    rows[headerRowNum - 1];
+
+  const teamName =
+    teamNameRow && teamNameRow['A']
+      ? String(teamNameRow['A']).trim()
+      : '';
+
+
+  const result = [];
+
+
+  rowNumbers.forEach(function(rowNum) {
+
+    if (rowNum <= headerRowNum) {
+
+      return;
+
+    }
+
+
+    const cells =
+      rows[rowNum];
+
+    const ticketNo =
+      cells['C'];
+
+    if (!ticketNo) {
+
+      return;
+
+    }
+
+
+    result.push({
+
+      arrivedDate:
+        cells['A'] || '',
+
+      jobNo:
+        cells['B'] || '',
+
+      ticketNo:
+        ticketNo,
+
+      customer:
+        cells['D'] || '',
+
+      technician:
+        cells['E'] || '',
+
+      team:
+        teamName,
+
+      counted:
+        parseNumberCell_(cells['F']),
+
+      remarks:
+        cells['G'] || ''
+
+    });
+
+  });
+
+
+  return result;
+
+}
+
+
+
+const GASOLINE_DETAIL_TEST_SHEET_NAME_ =
+  'Gasoline Detail (Test)';
+
+// A-J เป็นคอลัมน์ข้อมูลที่ sync เขียนทับได้ทุกรอบ
+// K (Review) และ L (Note) เป็นคอลัมน์ให้คนกรอกเอง
+// M (Count Stack) และ N (Amount Received) เป็นสูตร
+// ในชีท — ทั้ง 4 คอลัมน์นี้ sync จะไม่แตะซ้ำถ้าแถว
+// นั้นมีอยู่แล้ว (ดู batchUpsertGasolineDetail_)
+// Team (F) มาจากแถวชื่อทีมในรายงานเอง (แถวก่อนหน้า
+// header row) ไม่ใช่ค่าคงที่ — เผื่อรวม 4 ทีมทีหลัง
+// จะได้แยกได้ว่าแต่ละแถวมาจากทีมไหน
+const GASOLINE_DETAIL_HEADERS_ = [
+
+  'Date Arrived',
+  'Job No.',
+  'Ticket No. (BK)',
+  'Customer Name',
+  'Technician Name',
+  'Team',
+  'Counted',
+  'Remarks',
+  'Last Sync',
+  'URL',
+  'Review',
+  'Note',
+  'Count Stack',
+  'Amount Received'
+
+];
+
+
+// เรทต่อ 1 งานที่ approve แล้ว — ผู้ใช้ระบุ 80 ตรงนี้
+// (ต่างจากค่า 70 ที่เคย confirm ไว้ก่อนหน้าจากรายงาน
+// สรุปรวม export_cost_all.php — ถ้า 80 ไม่ใช่ค่าตั้งใจ
+// ให้แก้ค่านี้ที่เดียว)
+const GASOLINE_RATE_PER_JOB_ = 80;
+
+
+
+/*************************************************
+ * หา URL ของแต่ละ ticket จากชีท Tickets ที่มีอยู่แล้ว
+ * (syncRocket75) — รายงาน gasoline ไม่มี ticket ID
+ * ตัวเลขให้ ต้อง join ด้วย Ticket No. (ข้อความ เช่น
+ * "BKIN0726-000526.R01") แทน ซึ่งใช้รูปแบบเดียวกัน
+ * กับคอลัมน์ "Ticket No" ของชีท Tickets พอดี ไม่ต้อง
+ * normalize — ticket ที่ยังไม่เคย sync ใน Tickets จะ
+ * ได้ URL ว่างเปล่า (ไม่ใช่ error)
+ *************************************************/
+
+function getTicketNoToUrlMap_() {
+
+  const map = {};
+
+  const sheet =
+    SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName(
+        ROCKET.TICKET_SHEET
+      );
+
+  if (!sheet) {
+
+    return map;
+
+  }
+
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 2) {
+
+    return map;
+
+  }
+
+
+  const ticketNoCol =
+    TICKET_HEADERS_.indexOf(
+      'Ticket No'
+    ) + 1;
+
+  const urlCol =
+    TICKET_HEADERS_.indexOf(
+      'URL'
+    ) + 1;
+
+  const ticketNos =
+    sheet.getRange(
+      2,
+      ticketNoCol,
+      lastRow - 1,
+      1
+    ).getDisplayValues();
+
+  const urls =
+    sheet.getRange(
+      2,
+      urlCol,
+      lastRow - 1,
+      1
+    ).getDisplayValues();
+
+
+  for (
+    let i = 0;
+    i < ticketNos.length;
+    i++
+  ) {
+
+    const ticketNo =
+      ticketNos[i][0];
+
+    if (ticketNo) {
+
+      map[ticketNo] =
+        urls[i][0];
+
+    }
+
+  }
+
+
+  return map;
+
+}
+
+
+
+/*************************************************
+ * สูตร Count Stack / Amount Received
+ * (ใช้เฉพาะตอนสร้างแถวใหม่เท่านั้น — แถวเดิมที่มีอยู่
+ * แล้วไม่แตะซ้ำ กันคนแก้ Review ไปแล้วสูตรโดนเขียนทับ)
+ *
+ * Count Stack: นับสะสมจากแถวบนสุด (แถว 2) ลงมาถึง
+ * แถวตัวเอง เฉพาะแถวที่ Technician Name ตรงกับตัวเอง
+ * + Counted > 0 + Review = "Approved" — ได้ "งานลำดับ
+ * ที่เท่าไหร่ของช่างคนนี้ที่ approve แล้ว" ต่อแถว
+ * **แต่แสดงค่าเฉพาะแถวที่ตัวเอง Approved แล้วเท่านั้น**
+ * (เจอบั๊กจริง: ถ้าไม่เช็คเงื่อนไขนี้ แถวที่ยังไม่ได้
+ * approve จะโชว์เลขค้างจากยอดสะสมของแถวก่อนหน้าไปเรื่อยๆ
+ * ดูเหมือนแถวนั้น approve ไปแล้วทั้งที่จริงยังไม่ได้กด) —
+ * ห่อด้วย IF เช็คแถวตัวเองก่อน ถ้ายังไม่ Approved
+ * (หรือ Counted ไม่เกิน 0) ให้ว่างเปล่าไปเลย
+ * Amount Received: Count Stack ของแถวนั้น × 80
+ * (ว่างเปล่าตามไปด้วยถ้า Count Stack ว่าง)
+ *************************************************/
+
+function gasolineCountStackFormula_(rowNum) {
+
+  return (
+    '=IF(AND(G' + rowNum + '>0,K' + rowNum + '="Approved"),' +
+    'COUNTIFS(' +
+    '$E$2:E' + rowNum + ',E' + rowNum + ',' +
+    '$G$2:G' + rowNum + ',">0",' +
+    '$K$2:K' + rowNum + ',"Approved"),"")'
+  );
+
+}
+
+
+
+function gasolineAmountFormula_(rowNum) {
+
+  return (
+    '=IF(M' + rowNum + '="","",M' + rowNum +
+    '*' + GASOLINE_RATE_PER_JOB_ + ')'
+  );
+
+}
+
+
+
+function buildGasolineDetailRowIndex_(sheet) {
+
+  sheet.getRange(
+    1,
+    1,
+    1,
+    GASOLINE_DETAIL_HEADERS_.length
+  ).setValues(
+    [GASOLINE_DETAIL_HEADERS_]
+  );
+
+
+  const index = {};
+
+  // เก็บไว้ว่าแถวไหนมีสูตร Count Stack (คอลัมน์ M)
+  // อยู่แล้วบ้าง — แถวที่ sync ไว้ตั้งแต่ก่อนเพิ่ม
+  // คอลัมน์ M/N เข้ามาจะไม่มีสูตรเลย ต้องมา backfill
+  // ให้ทีหลัง (ดู batchUpsertGasolineDetail_)
+  const hasFormula = {};
+
+  const lastRow =
+    sheet.getLastRow();
+
+
+  if (lastRow >= 2) {
+
+    const ticketNos =
+      sheet.getRange(
+        2,
+        3,
+        lastRow - 1,
+        1
+      ).getDisplayValues();
+
+    const countStackFormulas =
+      sheet.getRange(
+        2,
+        13,
+        lastRow - 1,
+        1
+      ).getFormulas();
+
+    ticketNos.forEach(function(row, i) {
+
+      if (row[0]) {
+
+        const rowNum =
+          i + 2;
+
+        index[String(row[0])] =
+          rowNum;
+
+        hasFormula[rowNum] =
+          countStackFormulas[i][0] !== '';
+
+      }
+
+    });
+
+  }
+
+
+  return {
+
+    sheet: sheet,
+    index: index,
+    hasFormula: hasFormula,
+    lastRow: lastRow
+
+  };
+
+}
+
+
+
+/*************************************************
+ * UPSERT — key คือ Ticket No. (BK) (คอลัมน์ C)
+ * แถวเดิม: เขียนทับแค่ A:I (ข้อมูลจาก sync) ปล่อย
+ *   J (Review), K (Note), L/M (สูตร) ไว้เหมือนเดิม
+ * แถวใหม่: เขียนเต็ม A:M — Review/Note ว่างเปล่าไว้
+ *   ให้คนกรอกทีหลัง, ใส่สูตร Count Stack/Amount
+ *   Received ให้เลย
+ *************************************************/
+
+function batchUpsertGasolineDetail_(
+  rows,
+  ctx,
+  urlMap,
+  lastSync
+) {
+
+  if (rows.length === 0) {
+
+    return;
+
+  }
+
+
+  const spreadsheetId =
+    SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getId();
+
+  const sheetName =
+    ctx.sheet.getName();
+
+  const data = [];
+
+  const newRows = [];
+
+
+  rows.forEach(function(r) {
+
+    const url =
+      urlMap[r.ticketNo] ||
+      '';
+
+    const dataRow = [
+
+      r.arrivedDate,
+      r.jobNo,
+      r.ticketNo,
+      r.customer,
+      r.technician,
+      r.team,
+      r.counted,
+      r.remarks,
+      lastSync,
+      url
+
+    ];
+
+    const existingRow =
+      ctx.index[String(r.ticketNo)];
+
+
+    if (existingRow) {
+
+      data.push({
+
+        range:
+          "'" + sheetName + "'!A" +
+          existingRow + ':J' +
+          existingRow,
+
+        values: [dataRow]
+
+      });
+
+
+      // backfill สูตรให้แถวเก่าที่ sync มาตั้งแต่ก่อน
+      // เพิ่มคอลัมน์ M/N เข้ามา (ไม่งั้นแถวพวกนี้จะไม่มี
+      // สูตรตลอดไป) — แถวที่มีสูตรอยู่แล้วไม่แตะซ้ำ
+      if (!ctx.hasFormula[existingRow]) {
+
+        data.push({
+
+          range:
+            "'" + sheetName + "'!M" +
+            existingRow + ':N' +
+            existingRow,
+
+          values: [[
+
+            gasolineCountStackFormula_(existingRow),
+            gasolineAmountFormula_(existingRow)
+
+          ]]
+
+        });
+
+        ctx.hasFormula[existingRow] = true;
+
+      }
+
+    } else {
+
+      newRows.push({
+
+        ticketNo: r.ticketNo,
+        dataRow: dataRow
+
+      });
+
+    }
+
+  });
+
+
+  if (newRows.length > 0) {
+
+    const startRow =
+      ctx.lastRow + 1;
+
+    const fullRows =
+      newRows.map(function(nr, i) {
+
+        const rowNum =
+          startRow + i;
+
+        return nr.dataRow.concat([
+
+          '',
+          '',
+          gasolineCountStackFormula_(rowNum),
+          gasolineAmountFormula_(rowNum)
+
+        ]);
+
+      });
+
+    data.push({
+
+      range:
+        "'" + sheetName + "'!A" +
+        startRow + ':N' +
+        (startRow + newRows.length - 1),
+
+      values: fullRows
+
+    });
+
+    newRows.forEach(function(nr, i) {
+
+      ctx.index[String(nr.ticketNo)] =
+        startRow + i;
+
+    });
+
+    ctx.lastRow +=
+      newRows.length;
+
+  }
+
+
+  Sheets.Spreadsheets.Values.batchUpdate(
+    {
+
+      valueInputOption:
+        'USER_ENTERED',
+
+      data: data
+
+    },
+    spreadsheetId
+  );
+
+}
+
+
+
+function applyGasolineReviewValidation_(
+  sheet,
+  lastRow
+) {
+
+  if (lastRow < 2) {
+
+    return;
+
+  }
+
+
+  const rule =
+    SpreadsheetApp
+      .newDataValidation()
+      .requireValueInList(
+        ['Approved', 'Not Approved'],
+        true
+      )
+      .setAllowInvalid(false)
+      .build();
+
+
+  sheet.getRange(
+    2,
+    11,
+    lastRow - 1,
+    1
+  ).setDataValidation(rule);
+
+}
+
+
+
+// ดึงครบทั้ง 4 ทีม (GASOLINE_TEAM_IDS_) รวมเป็นชุดเดียว
+// ก่อนเขียนลงชีททดสอบ — ยังไม่แตะ Gasoline sheet จริง
+// จนกว่าจะยืนยันข้อมูลถูกต้องแล้ว
+// 4 ทีมที่มีช่างจริง (ยืนยันจาก dropdown "ทีม" ของหน้า
+// report_gasoline_cost.php — testInspectGasolineDropdowns())
+// ทีมอื่นๆ ในรายการ 19 ทีม (Admin Web, Call Center,
+// บัญชี, ผู้บริหาร ฯลฯ) เป็นทีมฝ่ายอื่น ไม่เกี่ยวกับ
+// ค่าน้ำมันช่าง เลยไม่รวมมาด้วย
+const GASOLINE_TEAM_IDS_ = [
+
+  { id: '8002371330', label: 'A (BK)' },
+  { id: '6371395077', label: 'B (BK)' },
+  { id: '3696295156', label: 'Training' },
+  { id: '9751260652', label: 'หัวหน้าช่าง' }
+
+];
+
+
+
+function syncGasolineTeamTest() {
+
+  Logger.log(
+    '========== GASOLINE TEAM SYNC (TEST — 4 ทีม) =========='
+  );
+
+
+  const auth =
+    rocketLogin_();
+
+  Logger.log(
+    'LOGIN OK'
+  );
+
+
+  let rows = [];
+
+
+  GASOLINE_TEAM_IDS_.forEach(function(team) {
+
+    const request =
+      buildGasolineTeamExportRequest_(
+        auth,
+        '30/07/2026',
+        '29/08/2026',
+        team.id
+      );
+
+    const res =
+      UrlFetchApp.fetch(
+        request.url,
+        request
+      );
+
+
+    if (
+      res.getResponseCode()
+      !== 200
+    ) {
+
+      Logger.log(
+        'ERROR ทีม ' +
+        team.label +
+        ': HTTP ' +
+        res.getResponseCode()
+      );
+
+      return;
+
+    }
+
+
+    const teamRows =
+      extractGasolineTeamRows_(
+        res.getBlob()
+      );
+
+    Logger.log(
+      'ทีม ' +
+      team.label +
+      ': พบ ' +
+      teamRows.length +
+      ' แถว'
+    );
+
+    rows =
+      rows.concat(teamRows);
+
+  });
+
+
+  Logger.log(
+    'รวมทั้งหมด ' +
+    rows.length +
+    ' แถว (4 ทีม)'
+  );
+
+
+  const urlMap =
+    getTicketNoToUrlMap_();
+
+
+  const ss =
+    SpreadsheetApp
+      .getActiveSpreadsheet();
+
+  let sheet =
+    ss.getSheetByName(
+      GASOLINE_DETAIL_TEST_SHEET_NAME_
+    );
+
+  if (!sheet) {
+
+    sheet =
+      ss.insertSheet(
+        GASOLINE_DETAIL_TEST_SHEET_NAME_
+      );
+
+  }
+
+
+  const ctx =
+    buildGasolineDetailRowIndex_(
+      sheet
+    );
+
+  const lastSync =
+    formatDateForSheet_(
+      new Date()
+    );
+
+
+  batchUpsertGasolineDetail_(
+    rows,
+    ctx,
+    urlMap,
+    lastSync
+  );
+
+  applyGasolineReviewValidation_(
+    sheet,
+    ctx.lastRow
+  );
+
+
+  Logger.log(
+    'DONE — เขียนลงชีท "' +
+    GASOLINE_DETAIL_TEST_SHEET_NAME_ +
+    '" แล้ว (upsert — Review/Note/สูตรเดิมไม่ถูกแตะ)'
+  );
 
 }
