@@ -1,0 +1,271 @@
+/*************************************************
+ * SYNC TICKET STAGE — Node.js port ของ
+ * syncTicketStage() (stage.js)
+ *
+ * เขียนลงชีท "Ticket Stage (Test)" ก่อน — ไม่แตะ
+ * "Ticket Stage" จริง จนกว่าจะเทียบผลแล้วมั่นใจ
+ *
+ * ข้อจำกัดเดียวกับฝั่ง Apps Script: ยังไม่มีทั้ง prune
+ * และ skip-if-closed (parent ticket ไม่มีฟิลด์ปิดงาน
+ * ชัดเจนเท่า Repair Result และชีทนี้ key ด้วย Job No.
+ * ไม่ใช่ parent id ตรงๆ) — ยัง fetch ทุก parent ticket
+ * ทุกรอบเหมือนเดิม
+ *************************************************/
+
+const rocket = require('./lib/rocket-client');
+const sheetsLib = require('./lib/sheets-client');
+
+const STAGE_SHEET_NAME = 'Ticket Stage (Test)';
+const PARENT_CONCURRENCY = 30;
+
+const STAGE_HEADERS = [
+  'Job No.', 'Overall Status', 'Current Job Type', 'Active Stages', 'Current Stage', 'Rocket URL', 'Last Sync'
+];
+
+const JOBNO_COL = 1;
+
+
+
+/*************************************************
+ * แกะการ์ด stage จากหน้า parent (port ตรงจาก
+ * extractStageCardsFromHtml_ ใน stage.js — scope ไปที่
+ * <!--begin::Stat-->...<!--end::Stat--> block แล้วกรอง
+ * ด้วย <!--begin::Number-->...<!--end::Number--> ต้อง
+ * ว่างเปล่า กัน false positive กับการ์ด KPI ทั่วไป)
+ *************************************************/
+
+function extractStageCardsFromHtml(html) {
+
+  const cards = [];
+  const statBlockRegex = /<!--begin::Stat-->([\s\S]*?)<!--end::Stat-->/g;
+  let blockMatch;
+
+  while ((blockMatch = statBlockRegex.exec(html)) !== null) {
+
+    const block = blockMatch[1];
+
+    const numberMatch = block.match(/<!--begin::Number-->([\s\S]*?)<!--end::Number-->/);
+    if (numberMatch && rocket.cleanText(numberMatch[1]) !== '') {
+      continue;
+    }
+
+    const nameMatch = block.match(/<div class=["']fs-4 fw-bold["']>\s*([\s\S]*?)\s*<\/div>/);
+    const badgeMatch = block.match(/<span class=["']badge (badge-[\w-]+)[^"']*["']>\s*([\s\S]*?)<\/span>/);
+
+    if (!nameMatch || !badgeMatch) {
+      continue;
+    }
+
+    cards.push({
+      name: rocket.cleanText(nameMatch[1]),
+      badgeClass: badgeMatch[1],
+      status: rocket.cleanText(badgeMatch[2])
+    });
+
+  }
+
+  return cards;
+
+}
+
+
+
+function extractParentPageStageInfo(html, parentId) {
+
+  const jobNo = rocket.cleanText(rocket.extractRegex(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i));
+
+  const overallStatus = rocket.cleanText(rocket.extractRegex(
+    html,
+    /d-flex align-items-center mb-1[\s\S]*?<span[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
+  ));
+
+  const currentJobType = rocket.cleanText(rocket.extractRegex(
+    html,
+    /ประเภทงานปัจจุบัน\s*:?\s*<\/b>\s*<span>\s*([\s\S]*?)<\/span>/i
+  ));
+
+  const cards = extractStageCardsFromHtml(html);
+
+  return {
+    ticketId: parentId,
+    jobNo: jobNo,
+    overallStatus: overallStatus,
+    currentJobType: currentJobType,
+    cards: cards,
+    url: rocket.ROCKET_BASE + '/main/ticket_view.php?id=' + parentId
+  };
+
+}
+
+
+
+/*************************************************
+ * MAP การ์ด → เลข stage (port ตรงจาก classifyStageCard_)
+ *************************************************/
+
+function classifyStageCard(name) {
+
+  if (name.indexOf('หลังบ้าน') !== -1) {
+    if (name.indexOf('เบิกอะไหล่') !== -1) return 6;
+    if (name.indexOf('เสนอราคา') !== -1) return 7;
+  }
+
+  if (name.indexOf('ติดตาม') !== -1) return 5;
+  if (name.indexOf('เสนอราคา') !== -1) return 4;
+  if (name.indexOf('เบิกอะไหล่') !== -1) return 3;
+  if (name.indexOf('เข้าซ่อม') !== -1 || name.indexOf('ตรวจเช็ค') !== -1) return 2;
+  if (name.indexOf('คอลเซ็นเตอร์') !== -1) return 1;
+  if (name.indexOf('หัวหน้าธุรการ') !== -1) return 8;
+  if (name.indexOf('ธุรการ') !== -1) return 9;
+  if (name.indexOf('บัญชี') !== -1) return 10;
+
+  return null;
+
+}
+
+
+
+/*************************************************
+ * MAP ข้อความ "ประเภทงานปัจจุบัน" → เลข stage
+ * (port ตรงจาก classifyJobTypeText_ — แหล่งข้อมูลหลัก
+ * แม่นกว่าการ์ด เพราะการ์ดค้างสถานะเก่าได้ ดู
+ * ROCKET75-SYNC-NOTES.md สำหรับเคสจริงที่เจอ)
+ *************************************************/
+
+function classifyJobTypeText(text) {
+
+  if (!text) {
+    return null;
+  }
+
+  const hasHome = text.indexOf('หลังบ้าน') !== -1;
+  const candidates = [];
+
+  function addIfMatch(stage, matched) {
+    if (matched) {
+      candidates.push(stage);
+    }
+  }
+
+  addIfMatch(10, text.indexOf('บัญชี') !== -1);
+  addIfMatch(9, text.indexOf('ปิดงาน') !== -1 || text.indexOf('ปิดบิล') !== -1 || text.indexOf('เปิดบิล') !== -1);
+  addIfMatch(8, text.indexOf('หัวหน้าธุรการ') !== -1);
+  addIfMatch(9, !hasHome && text.indexOf('ธุรการ') !== -1 && text.indexOf('หัวหน้า') === -1);
+  addIfMatch(7, hasHome && text.indexOf('เสนอราคา') !== -1);
+  addIfMatch(6, hasHome && (text.indexOf('เบิกอะไหล่') !== -1 || text.indexOf('อะไหล่') !== -1));
+  addIfMatch(5, text.indexOf('ติดตาม') !== -1);
+  addIfMatch(4, !hasHome && text.indexOf('เสนอราคา') !== -1);
+  addIfMatch(3, !hasHome && (text.indexOf('เบิกอะไหล่') !== -1 || text.indexOf('อะไหล่') !== -1 || /part/i.test(text)));
+  addIfMatch(2, text.indexOf('ตรวจเช็ค') !== -1 || text.indexOf('เข้าซ่อม') !== -1 || text.indexOf('สำรวจซ่อม') !== -1 || text.indexOf('ซ่อม') !== -1);
+  addIfMatch(1, text.indexOf('คอลเซ็นเตอร์') !== -1 || text.indexOf('ออกใบงาน') !== -1 || text.indexOf('ออกเลขที่งาน') !== -1);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return Math.max.apply(null, candidates);
+
+}
+
+
+
+// fallback เมื่อ classifyJobTypeText คืน null เท่านั้น
+// (port ตรงจาก computeCurrentStage_)
+function computeCurrentStage(cards) {
+
+  const matched = cards
+    .map(function(c) {
+      return {
+        stageNum: classifyStageCard(c.name),
+        isDone: /success/i.test(c.badgeClass),
+        card: c
+      };
+    })
+    .filter(function(c) { return c.stageNum !== null; })
+    .sort(function(a, b) { return a.stageNum - b.stageNum; });
+
+  const pending = matched.filter(function(c) { return !c.isDone; });
+
+  if (pending.length > 0) {
+    return pending[0].stageNum;
+  }
+  if (matched.length > 0) {
+    return matched[matched.length - 1].stageNum;
+  }
+  return null;
+
+}
+
+
+
+function formatActiveStages(cards) {
+  return cards.map(function(c) { return c.name + ': ' + c.status; }).join(', ');
+}
+
+
+
+function stageToRow(d, lastSync) {
+  return [
+    d.jobNo, d.overallStatus, d.currentJobType,
+    formatActiveStages(d.cards), d.currentStage || '',
+    d.url, lastSync
+  ];
+}
+
+
+
+async function main() {
+
+  console.log('========== TICKET STAGE SYNC (Node.js / GitHub Actions) ==========');
+
+  const auth = await rocket.rocketLogin();
+  console.log('LOGIN OK');
+
+  const range = rocket.computeLast3MonthsRangeBangkok();
+  console.log('ช่วงวันที่: ' + range.start + ' - ' + range.end);
+
+  const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end);
+  const parentIds = rocket.extractParentTicketIds(parentHtml);
+  console.log('PARENT TICKETS: ' + parentIds.length);
+
+  const results = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
+    const html = await rocket.getParentPageHtml(parentId, auth);
+    const info = extractParentPageStageInfo(html, parentId);
+    const jobTypeStage = classifyJobTypeText(info.currentJobType);
+    info.currentStage = jobTypeStage !== null ? jobTypeStage : computeCurrentStage(info.cards);
+    return info;
+  });
+
+  const lastSync = rocket.formatDateTimeBangkok(new Date());
+
+  const rows = [];
+  results.forEach(function(r, i) {
+    if (r && r.__error) {
+      console.log('ERROR Parent ' + parentIds[i] + ': ' + r.__error);
+    } else if (r) {
+      rows.push({ key: String(r.jobNo), row: stageToRow(r, lastSync) });
+    }
+  });
+
+  const spreadsheetId = process.env.SPREADSHEET_ID;
+  if (!spreadsheetId) {
+    throw new Error('ไม่พบ SPREADSHEET_ID ใน environment variables');
+  }
+  const sheets = await sheetsLib.getSheetsClient();
+
+  // ต่างจาก SpreadsheetApp — Sheets API ไม่สร้างแท็บ
+  // ใหม่ให้อัตโนมัติ ต้องเช็ค+สร้างเองก่อนเสมอ
+  await sheetsLib.ensureSheetExists(sheets, spreadsheetId, STAGE_SHEET_NAME);
+
+  const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, STAGE_SHEET_NAME, STAGE_HEADERS, JOBNO_COL);
+  await sheetsLib.batchUpsert(sheets, spreadsheetId, STAGE_SHEET_NAME, STAGE_HEADERS, ctx, rows);
+
+  console.log('เขียนแล้ว ' + rows.length + '/' + parentIds.length);
+  console.log('DONE');
+
+}
+
+main().catch(function(err) {
+  console.error('Sync ล้มเหลว:', err);
+  process.exit(1);
+});

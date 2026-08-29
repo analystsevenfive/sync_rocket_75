@@ -1,0 +1,28 @@
+name: Sync Ticket Stage
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github_action
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run ticket stage sync
+        env:
+          ROCKET_USERNAME: ${{ secrets.ROCKET_USERNAME }}
+          ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: node sync-ticket-stage.js
