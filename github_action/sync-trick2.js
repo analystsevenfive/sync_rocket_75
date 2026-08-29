@@ -60,6 +60,13 @@ async function main() {
   const parentIds = rocket.extractParentTicketIds(parentHtml);
   console.log('PARENT TICKETS: ' + parentIds.length);
 
+  // getTable.php อาจตอบ 200 กลับมาแบบไม่ใช่ตารางจริง (session
+  // สะดุด) ทำให้ extractParentTicketIds คืน [] เงียบๆ — abort
+  // ก่อนดีกว่าเขียนสถานะผิดพลาดทับของเดิม
+  if (parentIds.length === 0) {
+    throw new Error('พบ 0 parent ticket — น่าจะเป็น fetch/parse ผิดพลาดชั่วคราว ไม่ใช่ข้อมูลจริง');
+  }
+
   // ==========================================
   // 2. SUB TICKETS + team/technician info ต่อ parent
   // ==========================================
@@ -121,6 +128,11 @@ async function main() {
   const detailResults = await rocket.mapConcurrent(pendingSubs, SUB_CONCURRENCY, async function(subId) {
     const html = await rocket.getTicketDetailHtml(subId, auth);
     const ticket = rocket.parseTicketDetail(html, subId);
+    // เหมือนใน sync-tickets.js — กันหน้าที่ไม่ใช่ ticket detail
+    // จริง (session glitch/rate-limit) ไม่ให้เขียนเป็นแถวว่าง
+    if (!ticket.ticketNo && !ticket.status) {
+      throw new Error('หน้าที่ได้ไม่ใช่ ticket detail จริง (parse ไม่สำเร็จ)');
+    }
     const info = infoMap[String(subId)] || {};
     ticket.team = info.team || '';
     ticket.technicians = info.technicians || ticket.technician || '';

@@ -228,9 +228,24 @@ async function main() {
   const parentIds = rocket.extractParentTicketIds(parentHtml);
   console.log('PARENT TICKETS: ' + parentIds.length);
 
+  // getTable.php อาจตอบ 200 กลับมาแบบไม่ใช่ตารางจริง (session
+  // สะดุด) ทำให้ extractParentTicketIds คืน [] เงียบๆ — abort
+  // ก่อนดีกว่าเขียนสถานะผิดพลาดทับของเดิม
+  if (parentIds.length === 0) {
+    throw new Error('พบ 0 parent ticket — น่าจะเป็น fetch/parse ผิดพลาดชั่วคราว ไม่ใช่ข้อมูลจริง');
+  }
+
   const results = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
     const html = await rocket.getParentPageHtml(parentId, auth);
     const info = extractParentPageStageInfo(html, parentId);
+    // เหมือนบั๊กที่เจอใน sync-tickets.js/sync-trick2.js —
+    // ต่างกันตรงที่ jobNo ที่นี่ parse มาจาก html เอง (ไม่ใช่
+    // parameter ที่ผ่านมาตรงๆ) หน้า session สะดุดจะทำให้ jobNo
+    // ว่าง แล้วถูกใช้เป็น upsert key ตรงๆ กลายเป็นแถวว่างซ้ำๆ
+    // ต้อง throw ตั้งแต่ตรงนี้แทน
+    if (!info.jobNo) {
+      throw new Error('หน้าที่ได้ไม่ใช่ ticket page จริง (parse jobNo ไม่สำเร็จ)');
+    }
     const jobTypeStage = classifyJobTypeText(info.currentJobType);
     info.currentStage = jobTypeStage !== null ? jobTypeStage : computeCurrentStage(info.cards);
     return info;

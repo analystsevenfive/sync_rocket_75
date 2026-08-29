@@ -90,6 +90,17 @@ async function main() {
   const parentIds = rocket.extractParentTicketIds(parentHtml);
   console.log('PARENT TICKETS: ' + parentIds.length);
 
+  // getTable.php อาจตอบ HTTP 200 กลับมาแบบเนื้อหาไม่ใช่
+  // ตารางจริง (session สะดุด) ทำให้ extractParentTicketIds
+  // คืน [] แบบเงียบๆ โดยไม่ throw — ถ้าปล่อยผ่านไปจะทำให้
+  // subIds ว่างเปล่า แล้ว pruneStaleRows (ด้านล่าง) เข้าใจว่า
+  // ทุกแถวที่มีอยู่ "หลุดช่วงวันที่" แล้วลบทิ้งทั้งชีท —
+  // ต้อง abort ทันทีถ้าเจอ 0 parent ticket แทนที่จะปล่อยให้
+  // ทำงานต่อ
+  if (parentIds.length === 0) {
+    throw new Error('พบ 0 parent ticket — น่าจะเป็น fetch/parse ผิดพลาดชั่วคราว ไม่ใช่ข้อมูลจริง หยุดก่อนเพื่อกัน prune ลบข้อมูลทั้งชีทโดยไม่ตั้งใจ');
+  }
+
   // ==========================================
   // 2. SUB TICKETS (checkrepair.php ต่อ parent)
   // ==========================================
@@ -109,6 +120,12 @@ async function main() {
   });
   subIds = [...new Set(subIds)];
   console.log('SUB TICKETS: ' + subIds.length);
+
+  // เหตุผลเดียวกับเช็ค parentIds ด้านบน — subIds ว่างคือ
+  // สัญญาณผิดปกติ ต้อง abort ก่อนถึง prune ไม่ใช่ปล่อยผ่าน
+  if (subIds.length === 0) {
+    throw new Error('พบ 0 sub ticket ทั้งที่มี ' + parentIds.length + ' parent ticket — น่าจะเป็น fetch/parse ผิดพลาดชั่วคราว หยุดก่อนเพื่อกัน prune ลบข้อมูลทั้งชีทโดยไม่ตั้งใจ');
+  }
 
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) {
@@ -154,7 +171,15 @@ async function main() {
 
   const detailResults = await rocket.mapConcurrent(pendingSubs, SUB_CONCURRENCY, async function(subId) {
     const html = await rocket.getTicketDetailHtml(subId, auth);
-    return rocket.parseTicketDetail(html, subId);
+    const ticket = rocket.parseTicketDetail(html, subId);
+    // ภายใต้ concurrency สูง บางครั้งเซิร์ฟเวอร์ตอบ HTTP 200
+    // แต่เนื้อหาไม่ใช่หน้า ticket detail จริง (session sglitch/
+    // rate-limit placeholder) — ticketNo/status ว่างพร้อมกันคือ
+    // สัญญาณว่า parse ไม่สำเร็จ ต้องนับเป็น error ไม่ใช่เขียนแถวว่าง
+    if (!ticket.ticketNo && !ticket.status) {
+      throw new Error('หน้าที่ได้ไม่ใช่ ticket detail จริง (parse ไม่สำเร็จ)');
+    }
+    return ticket;
   });
 
   const lastSync = rocket.formatDateTimeBangkok(new Date());

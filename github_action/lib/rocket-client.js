@@ -13,6 +13,28 @@
  *************************************************/
 
 const ROCKET_BASE = 'https://rocket75.com';
+const FETCH_TIMEOUT_MS = 30000;
+
+
+
+function sleep(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
+
+
+// กัน connection ค้างตลอดกาล (ไม่เคย resolve/reject) จน
+// กิน worker slot ของ mapConcurrent ไปทั้ง job — ไม่มี
+// timeout เดิมเลยเพราะ fetch() เปล่าไม่มี timeout ในตัว
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(function() { controller.abort(); }, timeoutMs || FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 
 
@@ -25,7 +47,7 @@ async function rocketLogin() {
     throw new Error('ไม่พบ ROCKET_USERNAME / ROCKET_PASSWORD ใน environment variables');
   }
 
-  const firstRes = await fetch(ROCKET_BASE + '/index.php', {
+  const firstRes = await fetchWithTimeout(ROCKET_BASE + '/index.php', {
     method: 'GET',
     redirect: 'manual'
   });
@@ -51,7 +73,7 @@ async function rocketLogin() {
     loginHeaders.Cookie = cookie;
   }
 
-  const loginRes = await fetch(ROCKET_BASE + '/auth.php', {
+  const loginRes = await fetchWithTimeout(ROCKET_BASE + '/auth.php', {
     method: 'POST',
     headers: loginHeaders,
     body: loginBody,
@@ -88,16 +110,38 @@ async function rocketLogin() {
 // จบในโปรเซสเดียว — จำกัด concurrency ไม่ให้ยิงแรงเกิน
 // ไปพร้อมกันทีเดียวหมด (เผื่อใจ rocket75.com เหมือนที่
 // เคยคุยกันไว้)
-async function mapConcurrent(items, concurrency, worker) {
+// retries=1 (default) คือลองซ้ำ 1 ครั้งถ้าพลาด (รวม 2
+// attempt) หน่วง 500ms ก่อน retry กันซ้ำเซิร์ฟเวอร์ที่กำลัง
+// สะดุดอยู่ทันที — เทียบเท่า fetchAllWithRetry_ ฝั่ง Apps
+// Script เดิมที่หายไปตอนพอร์ตมา Node (mapConcurrent เดิม
+// ไม่มี retry เลย ทำให้ error ชั่วคราวกลายเป็น error ถาวร
+// ของรอบนั้นทันที)
+async function mapConcurrent(items, concurrency, worker, retries) {
 
+  const maxRetries = retries === undefined ? 1 : retries;
   const results = new Array(items.length);
   let index = 0;
+
+  async function runWithRetry(item, idx) {
+    let lastErr;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await worker(item, idx);
+      } catch (e) {
+        lastErr = e;
+        if (attempt < maxRetries) {
+          await sleep(500 * (attempt + 1));
+        }
+      }
+    }
+    throw lastErr;
+  }
 
   async function run() {
     while (index < items.length) {
       const current = index++;
       try {
-        results[current] = await worker(items[current], current);
+        results[current] = await runWithRetry(items[current], current);
       } catch (e) {
         results[current] = { __error: e.message };
       }
@@ -200,7 +244,7 @@ async function getParentTicketHtml(auth, startDate, endDate) {
   body.set('date_type', '1');
   body.set('search_warranty_type', 'x');
 
-  const res = await fetch(ROCKET_BASE + '/main/ajax/ticket/getTable.php', {
+  const res = await fetchWithTimeout(ROCKET_BASE + '/main/ajax/ticket/getTable.php', {
     method: 'POST',
     headers: headers,
     body: body
@@ -250,7 +294,7 @@ async function getCheckRepairHtml(parentId, auth) {
   body.set('token', auth.token);
   body.set('key', auth.key);
 
-  const res = await fetch(ROCKET_BASE + '/main/ajax/ticket_view/checkrepair.php', {
+  const res = await fetchWithTimeout(ROCKET_BASE + '/main/ajax/ticket_view/checkrepair.php', {
     method: 'POST',
     headers: headers,
     body: body
@@ -338,7 +382,7 @@ async function getTicketDetailHtml(ticketId, auth) {
     headers.Cookie = auth.cookie;
   }
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     ROCKET_BASE + '/main/ticket_checkrepair_view.php?id=' + ticketId,
     { method: 'GET', headers: headers, redirect: 'follow' }
   );
@@ -428,7 +472,7 @@ async function getParentPageHtml(parentId, auth) {
     headers.Cookie = auth.cookie;
   }
 
-  const res = await fetch(ROCKET_BASE + '/main/ticket_view.php?id=' + parentId, {
+  const res = await fetchWithTimeout(ROCKET_BASE + '/main/ticket_view.php?id=' + parentId, {
     method: 'GET',
     headers: headers
   });
