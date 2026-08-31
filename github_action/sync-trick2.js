@@ -4,9 +4,11 @@
  * ทดสอบผ่านแล้วบนชีท "Trick2 (Test)" — Apps Script
  * trigger เดิมปิดไปแล้ว จึงสลับมาเขียนชีท "Trick2" จริง
  *
- * ข้อจำกัดเดียวกับฝั่ง Apps Script: ยังไม่มี prune
- * (ต้อง map subId->ticketNo ก่อนถึงจะรู้ว่าแถวไหนควรลบ
- * ดู ROCKET75-SYNC-NOTES.md ข้อ 7 สำหรับเหตุผลเต็มๆ)
+ * มี prune แล้ว (ต่างจาก Apps Script เดิม) — แก้ปัญหาเดิม
+ * ที่ต้อง map subId->ticketNo ก่อนถึงจะรู้ว่าแถวไหนควรลบ
+ * (Trick2 คีย์ด้วย Ticket No ไม่ใช่ subId ตัวเลข) โดยอ่าน
+ * mapping นี้จากชีท Tickets ที่ sync-tickets.js เก็บไว้แล้ว
+ * แทนที่จะต้อง fetch รายละเอียดตั๋วทุกใบซ้ำอีกรอบ
  *************************************************/
 
 const rocket = require('./lib/rocket-client');
@@ -22,6 +24,7 @@ const SUB_CONCURRENCY = 30;
 // ตำแหน่งคอลัมน์ใน "Tickets" (ต้องตรงกับ
 // TICKET_HEADERS ใน sync-tickets.js เสมอ)
 const TICKETS_TICKET_ID_COL = 1;
+const TICKETS_TICKET_NO_COL = 4;
 const TICKETS_REPAIR_RESULT_COL = 26;
 
 const TRICK2_HEADERS = [
@@ -109,7 +112,53 @@ async function main() {
   await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, subIds.length + 1000);
 
   // ==========================================
-  // 3. SKIP ticket ที่ปิดงานแล้ว (อ้างอิงชีท Tickets)
+  // 3. PRUNE ticket ที่หลุดช่วงวันที่ปัจจุบัน (อ้างอิง
+  // subId -> Ticket No จากชีท Tickets เพราะ Trick2 คีย์
+  // ด้วย Ticket No ไม่ใช่ subId ตัวเลขโดยตรง)
+  // ==========================================
+
+  {
+    const idToTicketNoMap = await sheetsLib.getIdToValueMap(
+      sheets, spreadsheetId, TICKETS_SHEET_NAME, TICKETS_TICKET_ID_COL, TICKETS_TICKET_NO_COL
+    );
+
+    const validTicketNos = new Set();
+    let unmappedCount = 0;
+    subIds.forEach(function(id) {
+      const ticketNo = idToTicketNoMap[String(id)];
+      if (ticketNo) {
+        validTicketNos.add(ticketNo);
+      } else {
+        unmappedCount++;
+      }
+    });
+
+    if (unmappedCount > 0) {
+      console.log(unmappedCount + ' ใบยังไม่มี Ticket No ในชีท Tickets (อาจยังไม่ถูก sync มา)');
+    }
+
+    // กันกรณีชีท Tickets ยังไม่มีข้อมูลพอ (เช่นไม่เคยรันมา
+    // ก่อน หรือรันไม่สำเร็จ) จน mapping ได้น้อยผิดปกติ — ถ้า
+    // prune ไปตอนนั้นเสี่ยงลบของดีทิ้งเพราะ map ไม่ครบ ไม่ใช่
+    // เพราะตั๋วหลุดช่วงวันที่จริง
+    const mappedRatio = subIds.length === 0 ? 1 : validTicketNos.size / subIds.length;
+    if (mappedRatio < 0.9) {
+      console.log(
+        'map ได้แค่ ' + (mappedRatio * 100).toFixed(0) +
+        '% ของตั๋วทั้งหมด — ข้าม prune รอบนี้ (เผื่อชีท Tickets ยังไม่ทันอัพเดต) กันลบผิด'
+      );
+    } else {
+      const prunedCount = await sheetsLib.pruneStaleRows(
+        sheets, spreadsheetId, sheetId, TRICK2_SHEET_NAME, TRICK2_JOBNO_COL, validTicketNos
+      );
+      if (prunedCount > 0) {
+        console.log('ลบ ' + prunedCount + ' แถวที่หลุดช่วงวันที่ sync ปัจจุบันแล้ว');
+      }
+    }
+  }
+
+  // ==========================================
+  // 4. SKIP ticket ที่ปิดงานแล้ว (อ้างอิงชีท Tickets)
   // ==========================================
 
   const closedIds = await sheetsLib.getClosedIdsFromSheet(
@@ -127,7 +176,7 @@ async function main() {
   }
 
   // ==========================================
-  // 4. FETCH DETAIL + UPSERT
+  // 5. FETCH DETAIL + UPSERT
   // ==========================================
 
   const detailResults = await rocket.mapConcurrent(pendingSubs, SUB_CONCURRENCY, async function(subId) {

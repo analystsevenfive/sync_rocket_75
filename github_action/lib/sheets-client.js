@@ -336,6 +336,51 @@ async function getClosedIdsFromSheet(sheets, spreadsheetId, sheetName, idColInde
 
 
 
+// อ่านคอลัมน์ id + คอลัมน์เป้าหมาย (เช่น Ticket No) จาก
+// ชีทที่กำหนด คืน object id -> ค่านั้น — ใช้โดย sync-trick2.js
+// เพื่อแปลง subId (ตัวเลขล้วนจาก checkrepair.php) เป็น
+// Ticket No สำหรับ prune โดยไม่ต้อง fetch รายละเอียดตั๋ว
+// ทุกใบซ้ำ (ใช้ของที่ sync-tickets.js เก็บไว้แล้วในชีท
+// Tickets แทน)
+async function getIdToValueMap(sheets, spreadsheetId, sheetName, idColIndex1Based, valueColIndex1Based) {
+
+  const map = {};
+
+  const idCol = columnLetter(idColIndex1Based);
+  const valueCol = columnLetter(valueColIndex1Based);
+
+  let idsRes;
+  let valuesRes;
+  try {
+    idsRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId,
+      range: "'" + sheetName + "'!" + idCol + '2:' + idCol
+    });
+    valuesRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId,
+      range: "'" + sheetName + "'!" + valueCol + '2:' + valueCol
+    });
+  } catch (e) {
+    return map;
+  }
+
+  const ids = idsRes.data.values || [];
+  const values = valuesRes.data.values || [];
+
+  ids.forEach(function(row, i) {
+    const id = row[0];
+    const value = values[i] && values[i][0];
+    if (id && value) {
+      map[String(id)] = String(value);
+    }
+  });
+
+  return map;
+
+}
+
+
+
 module.exports = {
   getSheetsClient,
   columnLetter,
@@ -345,5 +390,6 @@ module.exports = {
   ensureGridSize,
   batchUpsert,
   getClosedIdsFromSheet,
+  getIdToValueMap,
   pruneStaleRows
 };
