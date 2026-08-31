@@ -399,9 +399,15 @@ async function getTicketDetailHtml(ticketId, auth) {
 
 function parseTicketDetail(html, ticketId) {
 
+  // เดิม hardcode ต่อท้ายแค่ ".R<เลข>" (Repair) — เจอจริงว่า
+  // ticket ประเภท PM/maintenance ใช้ ".C<เลข>" แทน (เช่น
+  // BKPM0826-000303.C01) ทำให้ ticketNo ว่างเปล่าทั้งที่
+  // fetch/parse ส่วนอื่นสำเร็จหมด กลายเป็นแถวที่หาไม่เจอ
+  // ตอน search เลขตั๋วเพราะช่อง Ticket No ว่าง — เปลี่ยนเป็น
+  // รับตัวอักษรได้ทั่วไปแทนที่จะจำกัดแค่ R
   const ticketNo =
-    extractRegex(html, /<h1[^>]*>[\s\S]*?([A-Z]+[A-Z0-9-]+\.R\d+)[\s\S]*?<\/h1>/i) ||
-    extractRegex(html, /(BK[A-Z0-9-]+\.R\d+)/i);
+    extractRegex(html, /<h1[^>]*>[\s\S]*?([A-Z]+[A-Z0-9-]+\.[A-Z]+\d+)[\s\S]*?<\/h1>/i) ||
+    extractRegex(html, /([A-Z]+[A-Z0-9-]+\.[A-Z]+\d+)/i);
 
   const parentId = extractRegex(html, /ticket_view\.php\?id=(\d+)/i);
 
