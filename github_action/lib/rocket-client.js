@@ -403,14 +403,14 @@ async function getTicketDetailHtml(ticketId, auth) {
 
 function parseTicketDetail(html, ticketId) {
 
-  // เดิม hardcode ต่อท้ายแค่ ".R<เลข>" (Repair) — เจอจริงว่า
-  // ticket ประเภท PM/maintenance ใช้ ".C<เลข>" แทน (เช่น
-  // BKPM0826-000303.C01) ทำให้ ticketNo ว่างเปล่าทั้งที่
-  // fetch/parse ส่วนอื่นสำเร็จหมด กลายเป็นแถวที่หาไม่เจอ
-  // ตอน search เลขตั๋วเพราะช่อง Ticket No ว่าง — เปลี่ยนเป็น
-  // รับตัวอักษรได้ทั่วไปแทนที่จะจำกัดแค่ R
-  const ticketNo =
-    extractRegex(html, /<h1[^>]*>[\s\S]*?([A-Z]+[A-Z0-9-]+\.[A-Z]+\d+)[\s\S]*?<\/h1>/i) ||
+  // เดิมเดารูปแบบเลขตั๋วด้วย regex (hardcode ต่อท้าย ".R<เลข>"
+  // ก่อน แล้วขยายเป็นตัวอักษรใดก็ได้ทีหลัง) แต่ตรวจ HTML จริง
+  // แล้วพบว่าเลขตั๋วเต็มๆ อยู่ใน breadcrumb เป็นรายการสุดท้าย
+  // (หน้าหลัก / รายการ Ticket / <parent> / <เลขตั๋วนี้>) แบบ
+  // plain text ไม่มี suffix ให้เดาเลย — ดึงจากตำแหน่งนี้ตรงๆ
+  // แทน ทนทานกว่าและไม่เสี่ยงไปจับข้อความอื่นในหน้าที่หน้าตา
+  // คล้ายกันโดยบังเอิญ (แบบที่ fallback regex เดิมเสี่ยงอยู่)
+  const ticketNo = extractLastBreadcrumbText(html) ||
     extractRegex(html, /([A-Z]+[A-Z0-9-]+\.[A-Z]+\d+)/i);
 
   const parentId = extractRegex(html, /ticket_view\.php\?id=(\d+)/i);
@@ -585,6 +585,31 @@ function extractBeforeLabel(html, label) {
 
 
 
+// breadcrumb ของหน้า detail: หน้าหลัก / รายการ Ticket /
+// <parent> / <ticket นี้> — รายการสุดท้ายคือเลขตั๋วเต็มๆ
+// เป็น plain text (ไม่มี <a> ล้อมเหมือนรายการก่อนหน้า)
+// ไม่ต้องเดารูปแบบ suffix เลย ต่างจาก parentTicketNo ที่ดึง
+// จาก <a href="ticket_view.php?..."> ได้ตรงๆ อยู่แล้ว
+function extractLastBreadcrumbText(html) {
+
+  const regex = /<li[^>]*class=["'][^"']*breadcrumb-item[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi;
+  let match;
+  let last = null;
+
+  while ((match = regex.exec(html)) !== null) {
+    last = match[1];
+  }
+
+  if (last === null) {
+    return '';
+  }
+
+  return cleanText(last).replace(/^\/\s*/, '');
+
+}
+
+
+
 function extractRegex(text, regex) {
   const m = text.match(regex);
   if (!m) {
@@ -615,5 +640,6 @@ module.exports = {
   getDtValue,
   getH5Value,
   extractBeforeLabel,
+  extractLastBreadcrumbText,
   extractRegex
 };
