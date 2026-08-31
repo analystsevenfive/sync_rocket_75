@@ -137,6 +137,13 @@ async function main() {
   // ใหม่ให้อัตโนมัติ ต้องเช็ค+สร้างเองก่อนเสมอ
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, TICKETS_SHEET_NAME);
 
+  // ขยาย grid ล่วงหน้าตั้งแต่ตรงนี้ (ก่อน fetch รายละเอียด
+  // ตั๋วซึ่งกินเวลาหลายนาที) แทนที่จะรอขยายตอนจะเขียนจริง
+  // ท้ายสุด — ให้เวลา Google propagate ขนาด grid ใหม่เยอะ
+  // ขึ้นตามธรรมชาติ กัน error "exceeds grid limits" จาก
+  // eventual consistency ที่เจอตอนขยาย+เขียนติดกันเร็วไป
+  await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, subIds.length + 1000);
+
   // ==========================================
   // 3. PRUNE ticket ที่หลุดช่วงวันที่ปัจจุบัน
   // ==========================================

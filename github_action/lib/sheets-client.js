@@ -118,15 +118,22 @@ async function ensureSheetAndBuildIndex(sheets, spreadsheetId, sheetName, header
 // error "exceeds grid limits" ทันที (เจอจริงตอนย้ายไปชีท
 // ใหม่ที่มี grid แค่ 1934 แถว แต่ต้องเขียนถึงแถว 2447)
 // ต้องเช็ค+ขยาย grid เองก่อนเขียนทุกครั้งที่มีแถวใหม่
-async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
+function sleep(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
 
+async function readGridRowCount(sheets, spreadsheetId, sheetId) {
   const meta = await sheets.spreadsheets.get({
     spreadsheetId: spreadsheetId,
     fields: 'sheets(properties(sheetId,gridProperties))'
   });
-
   const sheet = meta.data.sheets.find(function(s) { return s.properties.sheetId === sheetId; });
-  const currentRows = sheet ? sheet.properties.gridProperties.rowCount : 0;
+  return sheet ? sheet.properties.gridProperties.rowCount : 0;
+}
+
+async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
+
+  let currentRows = await readGridRowCount(sheets, spreadsheetId, sheetId);
 
   if (requiredRows <= currentRows) {
     return;
@@ -146,6 +153,18 @@ async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
       }]
     }
   });
+
+  // เจอจริงว่าขยายเสร็จแล้ว แต่ values.batchUpdate ที่ยิง
+  // ตามมาติดๆ ยัง error "exceeds grid limits" อยู่ — น่าจะ
+  // เป็น eventual consistency ฝั่ง Google (metadata ใหม่
+  // ยังไม่ propagate ทัน) เช็คย้ำ+รอสั้นๆ ก่อนไปต่อกันไว้
+  for (let attempt = 0; attempt < 4; attempt++) {
+    currentRows = await readGridRowCount(sheets, spreadsheetId, sheetId);
+    if (requiredRows <= currentRows) {
+      return;
+    }
+    await sleep(750);
+  }
 
 }
 

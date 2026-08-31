@@ -64,6 +64,10 @@ function computeRollingRangeBangkok(daysBack) {
 
 }
 
+function sleep(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
 // 4 ทีมเดียวกับที่ยืนยันแล้วบน Apps Script
 const GASOLINE_TEAM_IDS = [
   { id: '8002371330', label: 'A (BK)' },
@@ -394,15 +398,18 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName) {
 // ที่จะเขียนเกิน gridProperties.rowCount ปัจจุบัน จะได้
 // error "exceeds grid limits" ทันที (เจอจริงกับ sync-tickets.js
 // ตอนย้ายไปชีทใหม่ที่มี grid เล็กกว่าจำนวนแถวที่ต้องเขียน)
-async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
-
+async function readGridRowCount(sheets, spreadsheetId, sheetId) {
   const meta = await sheets.spreadsheets.get({
     spreadsheetId: spreadsheetId,
     fields: 'sheets(properties(sheetId,gridProperties))'
   });
-
   const sheet = meta.data.sheets.find(function(s) { return s.properties.sheetId === sheetId; });
-  const currentRows = sheet ? sheet.properties.gridProperties.rowCount : 0;
+  return sheet ? sheet.properties.gridProperties.rowCount : 0;
+}
+
+async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
+
+  let currentRows = await readGridRowCount(sheets, spreadsheetId, sheetId);
 
   if (requiredRows <= currentRows) {
     return;
@@ -422,6 +429,18 @@ async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
       }]
     }
   });
+
+  // เจอจริงบน sync-tickets.js ว่าขยายเสร็จแล้ว แต่
+  // values.batchUpdate ที่ยิงตามมาติดๆ ยัง error "exceeds
+  // grid limits" อยู่ — น่าจะเป็น eventual consistency ฝั่ง
+  // Google เช็คย้ำ+รอสั้นๆ ก่อนไปต่อกันไว้
+  for (let attempt = 0; attempt < 4; attempt++) {
+    currentRows = await readGridRowCount(sheets, spreadsheetId, sheetId);
+    if (requiredRows <= currentRows) {
+      return;
+    }
+    await sleep(750);
+  }
 
 }
 

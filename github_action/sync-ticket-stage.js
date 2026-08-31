@@ -272,6 +272,11 @@ async function main() {
   // ใหม่ให้อัตโนมัติ ต้องเช็ค+สร้างเองก่อนเสมอ
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, STAGE_SHEET_NAME);
 
+  // กัน error "exceeds grid limits" ถ้าจำนวน parent ticket
+  // เกิน grid ปัจจุบันของชีทนี้ (ensureGridSize มี retry+รอ
+  // สั้นๆ ในตัวอยู่แล้วเผื่อ eventual consistency ของ Sheets API)
+  await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, parentIds.length + 1000);
+
   const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, STAGE_SHEET_NAME, STAGE_HEADERS, JOBNO_COL);
   await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, STAGE_SHEET_NAME, STAGE_HEADERS, ctx, rows);
 
