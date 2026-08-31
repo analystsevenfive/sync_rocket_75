@@ -67,6 +67,18 @@ async function main() {
     return;
   }
 
+  // เช็คว่าเลขตั๋วเต็มๆ (เช่น BKPM0826-000303.C01) โผล่เป็น
+  // ข้อความอยู่ตรงนี้แล้วหรือเปล่า ก่อนที่จะต้องไปหน้า detail
+  // แล้วเดา suffix จาก <h1> เอง — ถ้ามีอยู่แล้วตรงนี้จะดึงตรง
+  // มาได้เลย ทนทานกว่าเดา pattern เยอะ
+  const linkIndex = checkRepairHtml.indexOf('id=' + SUB_ID);
+  if (linkIndex !== -1) {
+    const contextStart = Math.max(0, linkIndex - 400);
+    const contextEnd = Math.min(checkRepairHtml.length, linkIndex + 400);
+    console.log('--- HTML รอบๆ ลิงก์ sub ticket นี้ใน checkrepair.php (±400 ตัวอักษร) ---');
+    console.log(checkRepairHtml.substring(contextStart, contextEnd));
+  }
+
   // ==========================================
   // 3. fetch + parse รายละเอียด sub ticket
   // ==========================================
