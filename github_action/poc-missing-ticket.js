@@ -85,6 +85,20 @@ async function main() {
 
   console.log('--- ขั้นที่ 3: fetch + parse รายละเอียด sub ticket ---');
   const detailHtml = await rocket.getTicketDetailHtml(SUB_ID, auth);
+
+  // dump HTML จริงรอบๆ breadcrumb ("รายการ Ticket" เป็น
+  // label คงที่ หาง่าย) แทนที่จะเดา pattern เลขตั๋วต่อไป —
+  // breadcrumb มีเลขตั๋วเต็มๆ อยู่แล้วแบบไม่ต้องเดา suffix
+  const breadcrumbIndex = detailHtml.indexOf('รายการ Ticket');
+  if (breadcrumbIndex !== -1) {
+    const bStart = Math.max(0, breadcrumbIndex - 200);
+    const bEnd = Math.min(detailHtml.length, breadcrumbIndex + 800);
+    console.log('--- HTML รอบๆ breadcrumb ในหน้า detail (±200/800 ตัวอักษร) ---');
+    console.log(detailHtml.substring(bStart, bEnd));
+  } else {
+    console.log('ไม่เจอคำว่า "รายการ Ticket" ในหน้านี้เลย — โครงสร้างอาจต่างไปจากที่คิด');
+  }
+
   const ticket = rocket.parseTicketDetail(detailHtml, SUB_ID);
   console.log('ผลลัพธ์ parse: ' + JSON.stringify(ticket, null, 2));
 
