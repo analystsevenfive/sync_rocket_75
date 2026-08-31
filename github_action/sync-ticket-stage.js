@@ -270,10 +270,10 @@ async function main() {
 
   // ต่างจาก SpreadsheetApp — Sheets API ไม่สร้างแท็บ
   // ใหม่ให้อัตโนมัติ ต้องเช็ค+สร้างเองก่อนเสมอ
-  await sheetsLib.ensureSheetExists(sheets, spreadsheetId, STAGE_SHEET_NAME);
+  const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, STAGE_SHEET_NAME);
 
   const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, STAGE_SHEET_NAME, STAGE_HEADERS, JOBNO_COL);
-  await sheetsLib.batchUpsert(sheets, spreadsheetId, STAGE_SHEET_NAME, STAGE_HEADERS, ctx, rows);
+  await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, STAGE_SHEET_NAME, STAGE_HEADERS, ctx, rows);
 
   console.log('เขียนแล้ว ' + rows.length + '/' + parentIds.length);
   console.log('DONE');

@@ -111,10 +111,52 @@ async function ensureSheetAndBuildIndex(sheets, spreadsheetId, sheetName, header
 
 
 
+// ต่างจาก SpreadsheetApp ที่ setValues/appendRow ขยายจำนวน
+// แถวของ grid ให้อัตโนมัติเวลาข้อมูลเกินขนาดปัจจุบัน —
+// values.batchUpdate ของ Sheets API ไม่ขยายให้ ถ้า range
+// ที่จะเขียนเกิน gridProperties.rowCount ปัจจุบัน จะได้
+// error "exceeds grid limits" ทันที (เจอจริงตอนย้ายไปชีท
+// ใหม่ที่มี grid แค่ 1934 แถว แต่ต้องเขียนถึงแถว 2447)
+// ต้องเช็ค+ขยาย grid เองก่อนเขียนทุกครั้งที่มีแถวใหม่
+async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: spreadsheetId,
+    fields: 'sheets(properties(sheetId,gridProperties))'
+  });
+
+  const sheet = meta.data.sheets.find(function(s) { return s.properties.sheetId === sheetId; });
+  const currentRows = sheet ? sheet.properties.gridProperties.rowCount : 0;
+
+  if (requiredRows <= currentRows) {
+    return;
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: spreadsheetId,
+    requestBody: {
+      requests: [{
+        updateSheetProperties: {
+          properties: {
+            sheetId: sheetId,
+            gridProperties: { rowCount: requiredRows + 500 }
+          },
+          fields: 'gridProperties.rowCount'
+        }
+      }]
+    }
+  });
+
+}
+
+
+
 // batchUpsert ทั่วไป — key อยู่คอลัมน์ไหนก็ได้ (1-based)
 // rows แต่ละตัวต้องมี property "key" (string) กับ "row"
-// (array ของค่าตามลำดับคอลัมน์เต็ม A..lastCol)
-async function batchUpsert(sheets, spreadsheetId, sheetName, headers, ctx, rows) {
+// (array ของค่าตามลำดับคอลัมน์เต็ม A..lastCol) — ต้องส่ง
+// sheetId (ตัวเลข จาก ensureSheetExists) มาด้วย เผื่อต้อง
+// ขยาย grid ก่อนเขียน
+async function batchUpsert(sheets, spreadsheetId, sheetId, sheetName, headers, ctx, rows) {
 
   if (rows.length === 0) {
     return;
@@ -146,6 +188,8 @@ async function batchUpsert(sheets, spreadsheetId, sheetName, headers, ctx, rows)
       ctx.index[r.key] = startRow + i;
     });
     ctx.lastRow += newRows.length;
+
+    await ensureGridSize(sheets, spreadsheetId, sheetId, ctx.lastRow);
   }
 
   await sheets.spreadsheets.values.batchUpdate({
@@ -279,6 +323,7 @@ module.exports = {
   getSheetIdByName,
   ensureSheetExists,
   ensureSheetAndBuildIndex,
+  ensureGridSize,
   batchUpsert,
   getClosedIdsFromSheet,
   pruneStaleRows

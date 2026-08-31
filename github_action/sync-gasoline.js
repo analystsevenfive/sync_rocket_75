@@ -388,11 +388,50 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName) {
 
 
 
+// ต่างจาก SpreadsheetApp ที่ setValues/appendRow ขยายจำนวน
+// แถวของ grid ให้อัตโนมัติเวลาข้อมูลเกินขนาดปัจจุบัน —
+// values.batchUpdate ของ Sheets API ไม่ขยายให้ ถ้า range
+// ที่จะเขียนเกิน gridProperties.rowCount ปัจจุบัน จะได้
+// error "exceeds grid limits" ทันที (เจอจริงกับ sync-tickets.js
+// ตอนย้ายไปชีทใหม่ที่มี grid เล็กกว่าจำนวนแถวที่ต้องเขียน)
+async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: spreadsheetId,
+    fields: 'sheets(properties(sheetId,gridProperties))'
+  });
+
+  const sheet = meta.data.sheets.find(function(s) { return s.properties.sheetId === sheetId; });
+  const currentRows = sheet ? sheet.properties.gridProperties.rowCount : 0;
+
+  if (requiredRows <= currentRows) {
+    return;
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: spreadsheetId,
+    requestBody: {
+      requests: [{
+        updateSheetProperties: {
+          properties: {
+            sheetId: sheetId,
+            gridProperties: { rowCount: requiredRows + 500 }
+          },
+          fields: 'gridProperties.rowCount'
+        }
+      }]
+    }
+  });
+
+}
+
+
+
 // แทนที่ batchUpsertGasolineDetail_ ใน gasoline.js —
 // logic เดียวกันเป๊ะ (upsert คีย์ Ticket No, เขียนทับ
 // แค่ A:J แถวเดิม, backfill สูตร M:N ถ้าขาด, แถวใหม่
 // เขียนเต็ม A:N)
-async function upsertRows(sheets, spreadsheetId, sheetName, rows, ctx, urlMap, lastSync) {
+async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, urlMap, lastSync) {
 
   if (rows.length === 0) {
     return;
@@ -457,6 +496,8 @@ async function upsertRows(sheets, spreadsheetId, sheetName, rows, ctx, urlMap, l
     });
 
     ctx.lastRow += newRows.length;
+
+    await ensureGridSize(sheets, spreadsheetId, sheetId, ctx.lastRow);
 
   }
 
@@ -580,9 +621,9 @@ async function main() {
   const ctx = await buildRowIndex(sheets, spreadsheetId, GASOLINE_SHEET_NAME);
   const lastSync = formatLastSync(new Date());
 
-  await upsertRows(sheets, spreadsheetId, GASOLINE_SHEET_NAME, rows, ctx, urlMap, lastSync);
-
   const sheetId = await getSheetIdByName(sheets, spreadsheetId, GASOLINE_SHEET_NAME);
+  await upsertRows(sheets, spreadsheetId, sheetId, GASOLINE_SHEET_NAME, rows, ctx, urlMap, lastSync);
+
   await applyReviewValidation(sheets, spreadsheetId, sheetId, ctx.lastRow);
 
   console.log('DONE — เขียนลงชีท "' + GASOLINE_SHEET_NAME + '" แล้ว (upsert)');

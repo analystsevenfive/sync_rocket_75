@@ -194,7 +194,7 @@ async function main() {
   });
 
   const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, TICKETS_SHEET_NAME, TICKET_HEADERS, TICKET_ID_COL);
-  await sheetsLib.batchUpsert(sheets, spreadsheetId, TICKETS_SHEET_NAME, TICKET_HEADERS, ctx, rows);
+  await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, TICKETS_SHEET_NAME, TICKET_HEADERS, ctx, rows);
 
   console.log('เขียนแล้ว ' + rows.length + '/' + pendingSubs.length);
   console.log('DONE');

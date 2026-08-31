@@ -101,7 +101,7 @@ async function main() {
 
   // ต่างจาก SpreadsheetApp — Sheets API ไม่สร้างแท็บ
   // ใหม่ให้อัตโนมัติ ต้องเช็ค+สร้างเองก่อนเสมอ
-  await sheetsLib.ensureSheetExists(sheets, spreadsheetId, TRICK2_SHEET_NAME);
+  const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, TRICK2_SHEET_NAME);
 
   // ==========================================
   // 3. SKIP ticket ที่ปิดงานแล้ว (อ้างอิงชีท Tickets)
@@ -151,7 +151,7 @@ async function main() {
   });
 
   const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, TRICK2_SHEET_NAME, TRICK2_HEADERS, TRICK2_JOBNO_COL);
-  await sheetsLib.batchUpsert(sheets, spreadsheetId, TRICK2_SHEET_NAME, TRICK2_HEADERS, ctx, rows);
+  await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, TRICK2_SHEET_NAME, TRICK2_HEADERS, ctx, rows);
 
   console.log('เขียนแล้ว ' + rows.length + '/' + pendingSubs.length);
   console.log('DONE');
