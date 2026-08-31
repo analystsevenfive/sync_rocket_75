@@ -244,11 +244,15 @@ async function getParentTicketHtml(auth, startDate, endDate) {
   body.set('date_type', '1');
   body.set('search_warranty_type', 'x');
 
+  // ตารางนี้คืน parent ticket ทั้งหมดในช่วงวันที่เดียว
+  // (~2,150+ รายการสำหรับ 3 เดือน) หนักกว่าการ fetch ทีละ
+  // ใบมาก — 30 วิ default ไม่พอจริง (เจอ AbortError จริง)
+  // ให้เวลามากกว่าปกติเฉพาะจุดนี้
   const res = await fetchWithTimeout(ROCKET_BASE + '/main/ajax/ticket/getTable.php', {
     method: 'POST',
     headers: headers,
     body: body
-  });
+  }, 120000);
 
   if (res.status !== 200) {
     throw new Error('getTable.php HTTP ' + res.status);
