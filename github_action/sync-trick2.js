@@ -117,60 +117,78 @@ async function main() {
   // ด้วย Ticket No ไม่ใช่ subId ตัวเลขโดยตรง)
   // ==========================================
 
-  {
-    const idToTicketNoMap = await sheetsLib.getIdToValueMap(
-      sheets, spreadsheetId, TICKETS_SHEET_NAME, TICKETS_TICKET_ID_COL, TICKETS_TICKET_NO_COL
-    );
+  const idToTicketNoMap = await sheetsLib.getIdToValueMap(
+    sheets, spreadsheetId, TICKETS_SHEET_NAME, TICKETS_TICKET_ID_COL, TICKETS_TICKET_NO_COL
+  );
 
-    const validTicketNos = new Set();
-    let unmappedCount = 0;
-    subIds.forEach(function(id) {
-      const ticketNo = idToTicketNoMap[String(id)];
-      if (ticketNo) {
-        validTicketNos.add(ticketNo);
-      } else {
-        unmappedCount++;
-      }
-    });
-
-    if (unmappedCount > 0) {
-      console.log(unmappedCount + ' ใบยังไม่มี Ticket No ในชีท Tickets (อาจยังไม่ถูก sync มา)');
-    }
-
-    // กันกรณีชีท Tickets ยังไม่มีข้อมูลพอ (เช่นไม่เคยรันมา
-    // ก่อน หรือรันไม่สำเร็จ) จน mapping ได้น้อยผิดปกติ — ถ้า
-    // prune ไปตอนนั้นเสี่ยงลบของดีทิ้งเพราะ map ไม่ครบ ไม่ใช่
-    // เพราะตั๋วหลุดช่วงวันที่จริง
-    const mappedRatio = subIds.length === 0 ? 1 : validTicketNos.size / subIds.length;
-    if (mappedRatio < 0.9) {
-      console.log(
-        'map ได้แค่ ' + (mappedRatio * 100).toFixed(0) +
-        '% ของตั๋วทั้งหมด — ข้าม prune รอบนี้ (เผื่อชีท Tickets ยังไม่ทันอัพเดต) กันลบผิด'
-      );
+  const validTicketNos = new Set();
+  let unmappedCount = 0;
+  subIds.forEach(function(id) {
+    const ticketNo = idToTicketNoMap[String(id)];
+    if (ticketNo) {
+      validTicketNos.add(ticketNo);
     } else {
-      const prunedCount = await sheetsLib.pruneStaleRows(
-        sheets, spreadsheetId, sheetId, TRICK2_SHEET_NAME, TRICK2_JOBNO_COL, validTicketNos
-      );
-      if (prunedCount > 0) {
-        console.log('ลบ ' + prunedCount + ' แถวที่หลุดช่วงวันที่ sync ปัจจุบันแล้ว');
-      }
+      unmappedCount++;
+    }
+  });
+
+  if (unmappedCount > 0) {
+    console.log(unmappedCount + ' ใบยังไม่มี Ticket No ในชีท Tickets (อาจยังไม่ถูก sync มา)');
+  }
+
+  // กันกรณีชีท Tickets ยังไม่มีข้อมูลพอ (เช่นไม่เคยรันมา
+  // ก่อน หรือรันไม่สำเร็จ) จน mapping ได้น้อยผิดปกติ — ถ้า
+  // prune ไปตอนนั้นเสี่ยงลบของดีทิ้งเพราะ map ไม่ครบ ไม่ใช่
+  // เพราะตั๋วหลุดช่วงวันที่จริง
+  const mappedRatio = subIds.length === 0 ? 1 : validTicketNos.size / subIds.length;
+  if (mappedRatio < 0.9) {
+    console.log(
+      'map ได้แค่ ' + (mappedRatio * 100).toFixed(0) +
+      '% ของตั๋วทั้งหมด — ข้าม prune รอบนี้ (เผื่อชีท Tickets ยังไม่ทันอัพเดต) กันลบผิด'
+    );
+  } else {
+    const prunedCount = await sheetsLib.pruneStaleRows(
+      sheets, spreadsheetId, sheetId, TRICK2_SHEET_NAME, TRICK2_JOBNO_COL, validTicketNos
+    );
+    if (prunedCount > 0) {
+      console.log('ลบ ' + prunedCount + ' แถวที่หลุดช่วงวันที่ sync ปัจจุบันแล้ว');
     }
   }
 
+  // ต้องสร้าง index ตอนนี้ (หลัง prune แล้ว ก่อน skip) เพื่อ
+  // เอาไปเช็คในขั้นถัดไปว่าตั๋วที่ปิดงานแล้วมีแถวใน Trick2
+  // อยู่จริงไหม — ไม่ใช่แค่รอไปสร้างตอน batchUpsert เหมือนเดิม
+  const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, TRICK2_SHEET_NAME, TRICK2_HEADERS, TRICK2_JOBNO_COL);
+
   // ==========================================
-  // 4. SKIP ticket ที่ปิดงานแล้ว (อ้างอิงชีท Tickets)
+  // 4. SKIP ticket ที่ปิดงานแล้ว "และ" มีแถวใน Trick2 อยู่แล้ว
   // ==========================================
+  //
+  // เดิม skip แค่เพราะปิดงานแล้วอย่างเดียว — พลาดเคสที่ครั้ง
+  // แรกที่พยายาม fetch ตั๋วนี้เข้า Trick2 ล้มเหลว (เช่น
+  // network hiccup ชั่วคราว) แล้วตั๋วดันปิดงานไปแล้วก่อนจะ
+  // retry สำเร็จ — ตั๋วนั้นจะไม่มีแถวใน Trick2 เลยตลอดไป
+  // (ต่างจาก Tickets ที่อย่างน้อยยังมีแถวเปล่าๆ ให้เห็น) ต้อง
+  // เช็คเพิ่มว่ามีแถวอยู่แล้วจริงไหม ไม่ใช่แค่ปิดงานหรือยัง
 
   const closedIds = await sheetsLib.getClosedIdsFromSheet(
     sheets, spreadsheetId, TICKETS_SHEET_NAME,
     TICKETS_TICKET_ID_COL, TICKETS_REPAIR_RESULT_COL, CLOSED_REPAIR_RESULT
   );
 
-  const pendingSubs = subIds.filter(function(id) { return !closedIds.has(String(id)); });
+  const pendingSubs = subIds.filter(function(id) {
+    if (!closedIds.has(String(id))) {
+      return true;
+    }
+    const ticketNo = idToTicketNoMap[String(id)];
+    const alreadyInTrick2 = Boolean(ticketNo && ctx.index[ticketNo]);
+    return !alreadyInTrick2;
+  });
+
   const skippedCount = subIds.length - pendingSubs.length;
   if (skippedCount > 0) {
     console.log(
-      'ข้าม ' + skippedCount + ' ใบเพราะปิดงานแล้ว (อ้างอิงจากชีท Tickets) — เหลือต้อง fetch ' +
+      'ข้าม ' + skippedCount + ' ใบเพราะปิดงานแล้วและมีแถวใน Trick2 อยู่แล้ว — เหลือต้อง fetch ' +
       pendingSubs.length + ' ใบ จากทั้งหมด ' + subIds.length + ' ใบ'
     );
   }
@@ -204,7 +222,6 @@ async function main() {
     }
   });
 
-  const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, TRICK2_SHEET_NAME, TRICK2_HEADERS, TRICK2_JOBNO_COL);
   await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, TRICK2_SHEET_NAME, TRICK2_HEADERS, ctx, rows);
 
   console.log('เขียนแล้ว ' + rows.length + '/' + pendingSubs.length);
