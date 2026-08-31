@@ -2,8 +2,9 @@
  * SYNC TICKET STAGE — Node.js port ของ
  * syncTicketStage() (stage.js)
  *
- * เขียนลงชีท "Ticket Stage (Test)" ก่อน — ไม่แตะ
- * "Ticket Stage" จริง จนกว่าจะเทียบผลแล้วมั่นใจ
+ * ทดสอบผ่านแล้วบนชีท "Ticket Stage (Test)" — Apps
+ * Script trigger เดิมปิดไปแล้ว จึงสลับมาเขียนชีท
+ * "Ticket Stage" จริง
  *
  * ข้อจำกัดเดียวกับฝั่ง Apps Script: ยังไม่มีทั้ง prune
  * และ skip-if-closed (parent ticket ไม่มีฟิลด์ปิดงาน
@@ -15,7 +16,7 @@
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
-const STAGE_SHEET_NAME = 'Ticket Stage (Test)';
+const STAGE_SHEET_NAME = 'Ticket Stage';
 const PARENT_CONCURRENCY = 30;
 
 const STAGE_HEADERS = [

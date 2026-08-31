@@ -17,10 +17,9 @@
  *   SPREADSHEET_ID                    — ID ของชีท (จาก
  *     URL: .../spreadsheets/d/<ID>/edit)
  *
- * เขียนลงชีท "Gasoline Detail (Test)" เหมือนฝั่ง Apps
- * Script ก่อน (ยังไม่ชี้ไป production sheet) เพื่อ
- * เทียบผลลัพธ์ว่าพอร์ตมาถูกต้องตรงกันหรือไม่ ก่อนค่อย
- * เปลี่ยนชื่อชีทปลายทางทีหลัง
+ * ทดสอบผ่านแล้วบนชีท "Gasoline Detail (Test)" — Apps
+ * Script trigger เดิมปิดไปแล้ว จึงสลับมาเขียนชีท
+ * "Gasoline Detail" จริง
  *************************************************/
 
 const { google } = require('googleapis');
@@ -28,7 +27,7 @@ const XLSX = require('xlsx');
 
 const ROCKET_BASE = 'https://rocket75.com';
 const TICKETS_SHEET_NAME = 'Tickets';
-const GASOLINE_SHEET_NAME = 'Gasoline Detail (Test)';
+const GASOLINE_SHEET_NAME = 'Gasoline Detail';
 const RATE_PER_JOB = 80;
 
 const GASOLINE_WINDOW_DAYS = 30;

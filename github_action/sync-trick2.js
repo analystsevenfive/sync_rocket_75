@@ -1,8 +1,8 @@
 /*************************************************
  * SYNC TRICK2 — Node.js port ของ syncTrick2() (trick2.js)
  *
- * เขียนลงชีท "Trick2 (Test)" ก่อน — ไม่แตะ "Trick2" จริง
- * จนกว่าจะเทียบผลแล้วมั่นใจ
+ * ทดสอบผ่านแล้วบนชีท "Trick2 (Test)" — Apps Script
+ * trigger เดิมปิดไปแล้ว จึงสลับมาเขียนชีท "Trick2" จริง
  *
  * ข้อจำกัดเดียวกับฝั่ง Apps Script: ยังไม่มี prune
  * (ต้อง map subId->ticketNo ก่อนถึงจะรู้ว่าแถวไหนควรลบ
@@ -12,14 +12,14 @@
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
-const TICKETS_SHEET_NAME = 'Tickets (Test)';
-const TRICK2_SHEET_NAME = 'Trick2 (Test)';
+const TICKETS_SHEET_NAME = 'Tickets';
+const TRICK2_SHEET_NAME = 'Trick2';
 const CLOSED_REPAIR_RESULT = 'ซ่อมเรียบร้อย';
 
 const PARENT_CONCURRENCY = 30;
 const SUB_CONCURRENCY = 30;
 
-// ตำแหน่งคอลัมน์ใน "Tickets (Test)" (ต้องตรงกับ
+// ตำแหน่งคอลัมน์ใน "Tickets" (ต้องตรงกับ
 // TICKET_HEADERS ใน sync-tickets.js เสมอ)
 const TICKETS_TICKET_ID_COL = 1;
 const TICKETS_REPAIR_RESULT_COL = 26;

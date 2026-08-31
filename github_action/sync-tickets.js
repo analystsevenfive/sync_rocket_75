@@ -3,15 +3,14 @@
  * (trick.js) รวม incremental skip-if-closed + prune
  * ที่เพิ่งทำบน Apps Script ด้วย
  *
- * เขียนลงชีท "Tickets (Test)" ก่อน (ไม่แตะชีท "Tickets"
- * จริงที่ Apps Script ยัง sync อยู่) จนกว่าจะเทียบผล
- * แล้วมั่นใจว่าพอร์ตมาถูกต้อง
+ * ทดสอบผ่านแล้วบนชีท "Tickets (Test)" — Apps Script
+ * trigger เดิมปิดไปแล้ว จึงสลับมาเขียนชีท "Tickets" จริง
  *************************************************/
 
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
-const TICKETS_SHEET_NAME = 'Tickets (Test)';
+const TICKETS_SHEET_NAME = 'Tickets';
 const CLOSED_REPAIR_RESULT = 'ซ่อมเรียบร้อย';
 
 const PARENT_CONCURRENCY = 30;
