@@ -205,6 +205,21 @@ function formatActiveStages(cards) {
 
 
 
+// หา stage สูงสุดที่การ์ดไหนก็ตามแมตช์ได้ (ไม่สนใจว่า
+// done/pending) — ใช้เสริม jobTypeStage เท่านั้น ไม่ได้แทนที่
+// computeCurrentStage (ยังใช้ตอน text ว่างเหมือนเดิม)
+function highestCardStage(cards) {
+
+  const stages = cards
+    .map(function(c) { return classifyStageCard(c.name); })
+    .filter(function(s) { return s !== null; });
+
+  return stages.length > 0 ? Math.max.apply(null, stages) : null;
+
+}
+
+
+
 function stageToRow(d, lastSync) {
   return [
     d.jobNo, d.overallStatus, d.currentJobType,
@@ -248,7 +263,24 @@ async function main() {
       throw new Error('หน้าที่ได้ไม่ใช่ ticket page จริง (parse jobNo ไม่สำเร็จ)');
     }
     const jobTypeStage = classifyJobTypeText(info.currentJobType);
-    info.currentStage = jobTypeStage !== null ? jobTypeStage : computeCurrentStage(info.cards);
+
+    if (jobTypeStage === null) {
+      // เหมือนเดิมทุกประการ — ตอน text ว่าง/แมตช์ไม่ได้เลย
+      // ใช้การ์ดแบบ pending-first (computeCurrentStage) ตามที่
+      // เคยแก้ปัญหาการ์ดค้างสถานะเก่าไว้แล้ว
+      info.currentStage = computeCurrentStage(info.cards);
+    } else {
+      // text ให้ค่ามาแล้ว แต่คำที่ฝ่ายธุรการพิมพ์ไม่ครอบคลุมทุก
+      // stage (เช่น "เปิดบิลลูกค้าภายนอก" ไม่มีคำว่า "บัญชี"
+      // เลยทั้งที่ตั๋วอยู่แท็บบัญชีจริงบนเว็บ) — ถ้ามีการ์ดไหน
+      // แมตช์ stage สูงกว่า text ให้เชื่อการ์ดแทน เพราะการ์ด
+      // โผล่มาแปลว่าตั๋วไปถึงจุดนั้นจริง (ต่างจากปัญหาเดิมที่
+      // การ์ดค้าง "ต่ำ" กว่าความจริง — กรณีนี้การ์ดสูงกว่าความจริง
+      // ไม่มีทางเกิดขึ้น เพราะการ์ดจะไม่โผล่ถ้ายังไปไม่ถึง)
+      const cardStage = highestCardStage(info.cards);
+      info.currentStage = (cardStage !== null && cardStage > jobTypeStage) ? cardStage : jobTypeStage;
+    }
+
     return info;
   });
 
