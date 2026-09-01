@@ -196,6 +196,35 @@ function computeLast3MonthsRangeBangkok() {
 
 
 
+// ใช้โดย sync-tomorrow-plan.js — start=end=วันพรุ่งนี้เสมอ
+// (ตามเวลากรุงเทพ) คู่กับ date_type=2 (วันที่นัดหมาย)
+function computeTomorrowRangeBangkok() {
+
+  function bangkokDateParts(date) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Bangkok',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(date);
+    const get = (t) => Number(parts.find(p => p.type === t).value);
+    return { year: get('year'), month: get('month'), day: get('day') };
+  }
+
+  function fmt(year, month, day) {
+    const dd = String(day).padStart(2, '0');
+    const mm = String(month).padStart(2, '0');
+    return dd + '/' + mm + '/' + year;
+  }
+
+  const now = bangkokDateParts(new Date());
+  const tomorrow = new Date(now.year, now.month - 1, now.day + 1);
+  const tomorrowStr = fmt(tomorrow.getFullYear(), tomorrow.getMonth() + 1, tomorrow.getDate());
+
+  return { start: tomorrowStr, end: tomorrowStr };
+
+}
+
+
+
 function formatDateTimeBangkok(date) {
 
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -218,7 +247,12 @@ function formatDateTimeBangkok(date) {
  * PARENT TICKETS (getTable.php)
  *************************************************/
 
-async function getParentTicketHtml(auth, startDate, endDate) {
+// dateType: '1' = ค้นหาจากวันที่แจ้ง/สร้างตั๋ว (default,
+// ใช้โดย sync-tickets.js/trick2/stage), '2' = ค้นหาจาก
+// "วันที่นัดหมาย" (ยืนยันจริงจาก DevTools ตอนเลือก dropdown
+// "ค้นหาจากวัน" บนหน้า ticket_list.php) — คนละ field วันที่
+// กันเลย ใช้โดย sync-tomorrow-plan.js
+async function getParentTicketHtml(auth, startDate, endDate, dateType) {
 
   const headers = {
     Origin: ROCKET_BASE,
@@ -241,7 +275,7 @@ async function getParentTicketHtml(auth, startDate, endDate) {
   body.set('key', auth.key);
   body.set('search_type', 'x');
   body.set('search_area', 'x');
-  body.set('date_type', '1');
+  body.set('date_type', dateType || '1');
   body.set('search_warranty_type', 'x');
 
   // ตารางนี้คืน parent ticket ทั้งหมดในช่วงวันที่เดียว
@@ -625,6 +659,7 @@ module.exports = {
   rocketLogin,
   mapConcurrent,
   computeLast3MonthsRangeBangkok,
+  computeTomorrowRangeBangkok,
   formatDateTimeBangkok,
   getParentTicketHtml,
   extractParentTicketIds,
