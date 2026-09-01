@@ -11,12 +11,23 @@
  * ชัดเจนเท่า Repair Result และชีทนี้ key ด้วย Job No.
  * ไม่ใช่ parent id ตรงๆ) — ยัง fetch ทุก parent ticket
  * ทุกรอบเหมือนเดิม
+ *
+ * รองรับ env var สำหรับรัน test แบบจำกัดจำนวนเข้าชีทแยก
+ * ต่างหาก โดยไม่ต้องแยกไฟล์โค้ดซ้ำ (ดู .github/workflows/
+ * ticket-stage-test.yml):
+ *   STAGE_SHEET_NAME_OVERRIDE — ชื่อชีทปลายทาง (default: 'Ticket Stage')
+ *   PARENT_LIMIT              — จำกัดจำนวน parent ticket ที่ทดสอบ
  *************************************************/
 
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
-const STAGE_SHEET_NAME = 'Ticket Stage';
+// override ได้ผ่าน env var สำหรับรัน test แบบจำกัดจำนวน
+// เข้าชีทแยกต่างหาก โดยไม่ต้องแยกไฟล์โค้ดซ้ำ (กันโค้ด
+// production กับ test เพี้ยนออกจากกันทีหลัง)
+const STAGE_SHEET_NAME = process.env.STAGE_SHEET_NAME_OVERRIDE || 'Ticket Stage';
+const PARENT_LIMIT = process.env.PARENT_LIMIT ? Number(process.env.PARENT_LIMIT) : null;
+
 const PARENT_CONCURRENCY = 30;
 
 const STAGE_HEADERS = [
@@ -251,7 +262,12 @@ async function main() {
     throw new Error('พบ 0 parent ticket — น่าจะเป็น fetch/parse ผิดพลาดชั่วคราว ไม่ใช่ข้อมูลจริง');
   }
 
-  const results = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
+  const targetParentIds = PARENT_LIMIT ? parentIds.slice(0, PARENT_LIMIT) : parentIds;
+  if (PARENT_LIMIT) {
+    console.log('PARENT_LIMIT=' + PARENT_LIMIT + ' — ทดสอบแค่ ' + targetParentIds.length + ' ใบแรก');
+  }
+
+  const results = await rocket.mapConcurrent(targetParentIds, PARENT_CONCURRENCY, async function(parentId) {
     const html = await rocket.getParentPageHtml(parentId, auth);
     const info = extractParentPageStageInfo(html, parentId);
     // เหมือนบั๊กที่เจอใน sync-tickets.js/sync-trick2.js —
@@ -289,7 +305,7 @@ async function main() {
   const rows = [];
   results.forEach(function(r, i) {
     if (r && r.__error) {
-      console.log('ERROR Parent ' + parentIds[i] + ': ' + r.__error);
+      console.log('ERROR Parent ' + targetParentIds[i] + ': ' + r.__error);
     } else if (r) {
       rows.push({ key: String(r.jobNo), row: stageToRow(r, lastSync) });
     }
@@ -308,12 +324,12 @@ async function main() {
   // กัน error "exceeds grid limits" ถ้าจำนวน parent ticket
   // เกิน grid ปัจจุบันของชีทนี้ (ensureGridSize มี retry+รอ
   // สั้นๆ ในตัวอยู่แล้วเผื่อ eventual consistency ของ Sheets API)
-  await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, parentIds.length + 1000);
+  await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, targetParentIds.length + 1000);
 
   const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, STAGE_SHEET_NAME, STAGE_HEADERS, JOBNO_COL);
   await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, STAGE_SHEET_NAME, STAGE_HEADERS, ctx, rows);
 
-  console.log('เขียนแล้ว ' + rows.length + '/' + parentIds.length);
+  console.log('เขียนแล้ว ' + rows.length + '/' + targetParentIds.length);
   console.log('DONE');
 
 }

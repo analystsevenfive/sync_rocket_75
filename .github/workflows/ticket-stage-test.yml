@@ -1,0 +1,35 @@
+name: Ticket Stage Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      parent_limit:
+        description: 'จำนวน parent ticket ที่จะทดสอบ (ใบแรกสุด)'
+        required: false
+        default: '10'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github_action
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run ticket stage sync (limited, test sheet)
+        env:
+          ROCKET_USERNAME: ${{ secrets.ROCKET_USERNAME }}
+          ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          STAGE_SHEET_NAME_OVERRIDE: 'Ticket Stage Test'
+          PARENT_LIMIT: ${{ inputs.parent_limit }}
+        run: node sync-ticket-stage.js
