@@ -7,6 +7,14 @@ on:
         description: 'จำนวน parent ticket ที่จะทดสอบ (ใบแรกสุด)'
         required: false
         default: '10'
+      start_date:
+        description: 'วันที่เริ่ม scan (dd/MM/yyyy) — เว้นว่างไว้ = ใช้ช่วง 3 เดือนปกติ'
+        required: false
+        default: ''
+      end_date:
+        description: 'วันที่สิ้นสุด scan (dd/MM/yyyy) — ต้องกรอกคู่กับ start_date'
+        required: false
+        default: ''
 
 jobs:
   test:
@@ -32,4 +40,6 @@ jobs:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           STAGE_SHEET_NAME_OVERRIDE: 'Ticket Stage Test'
           PARENT_LIMIT: ${{ inputs.parent_limit }}
+          RANGE_START_OVERRIDE: ${{ inputs.start_date }}
+          RANGE_END_OVERRIDE: ${{ inputs.end_date }}
         run: node sync-ticket-stage.js

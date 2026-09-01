@@ -17,6 +17,8 @@
  * ticket-stage-test.yml):
  *   STAGE_SHEET_NAME_OVERRIDE — ชื่อชีทปลายทาง (default: 'Ticket Stage')
  *   PARENT_LIMIT              — จำกัดจำนวน parent ticket ที่ทดสอบ
+ *   RANGE_START_OVERRIDE      — วันที่เริ่ม scan (dd/MM/yyyy, ต้องคู่กับด้านล่าง)
+ *   RANGE_END_OVERRIDE        — วันที่สิ้นสุด scan (dd/MM/yyyy)
  *************************************************/
 
 const rocket = require('./lib/rocket-client');
@@ -248,7 +250,14 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const range = rocket.computeLast3MonthsRangeBangkok();
+  // override ได้ผ่าน env var (รูปแบบ dd/MM/yyyy) เผื่อทดสอบ
+  // ด้วยช่วงวันที่แคบกว่า 3 เดือนปกติ — ตัว getTable.php เอง
+  // เป็น request ที่หนักที่สุด (ต้อง scan ทั้ง 3 เดือนก่อนเสมอ
+  // ต่อให้ PARENT_LIMIT จะตัดเหลือกี่ใบทีหลังก็ตาม) กำหนด
+  // ช่วงแคบตรงนี้เลยจะเร็วกว่ารอ scan เต็มแล้วค่อยตัด
+  const range = (process.env.RANGE_START_OVERRIDE && process.env.RANGE_END_OVERRIDE)
+    ? { start: process.env.RANGE_START_OVERRIDE, end: process.env.RANGE_END_OVERRIDE }
+    : rocket.computeLast3MonthsRangeBangkok();
   console.log('ช่วงวันที่: ' + range.start + ' - ' + range.end);
 
   const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end);
