@@ -252,7 +252,7 @@ function formatDateTimeBangkok(date) {
 // "วันที่นัดหมาย" (ยืนยันจริงจาก DevTools ตอนเลือก dropdown
 // "ค้นหาจากวัน" บนหน้า ticket_list.php) — คนละ field วันที่
 // กันเลย ใช้โดย sync-tomorrow-plan.js
-async function getParentTicketHtml(auth, startDate, endDate, dateType) {
+async function getParentTicketHtml(auth, startDate, endDate, dateType, nameSearch) {
 
   const headers = {
     Origin: ROCKET_BASE,
@@ -265,10 +265,10 @@ async function getParentTicketHtml(auth, startDate, endDate, dateType) {
 
   const body = new URLSearchParams();
   body.set('status', '');
-  body.set('start_date', startDate);
-  body.set('end_date', endDate);
+  body.set('start_date', startDate || '');
+  body.set('end_date', endDate || '');
   body.set('search_checkrepair', 'x');
-  body.set('name_search', '');
+  body.set('name_search', nameSearch || '');
   body.set('search_team', 'x');
   body.set('search_staff', 'x');
   body.set('token', auth.token);
@@ -396,10 +396,20 @@ function extractCheckRepairInfo(html) {
       })
       .filter(function(name) { return name !== ''; });
 
-    info[subId] = {
+    const ticketNoMatch = cells[0] ? cells[0].match(/([A-Z0-9-]+\.[A-Z0-9]+)/i) : null;
+    const ticketNo = ticketNoMatch ? cleanText(ticketNoMatch[1]) : '';
+
+    const subInfo = {
+      subId: subId,
+      ticketNo: ticketNo,
       team: teamMatch ? cleanText(teamMatch[1]) : '',
       technicians: technicians.join(', ')
     };
+
+    info[subId] = subInfo;
+    if (ticketNo) {
+      info[ticketNo] = subInfo;
+    }
 
   }
 
@@ -657,6 +667,7 @@ function extractRegex(text, regex) {
 module.exports = {
   ROCKET_BASE,
   rocketLogin,
+  fetchWithTimeout,
   mapConcurrent,
   computeLast3MonthsRangeBangkok,
   computeTomorrowRangeBangkok,

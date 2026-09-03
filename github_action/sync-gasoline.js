@@ -24,8 +24,9 @@
 
 const { google } = require('googleapis');
 const XLSX = require('xlsx');
+const rocket = require('./lib/rocket-client');
 
-const ROCKET_BASE = 'https://rocket75.com';
+const ROCKET_BASE = rocket.ROCKET_BASE;
 const TICKETS_SHEET_NAME = 'Tickets';
 const GASOLINE_SHEET_NAME = 'Gasoline Detail';
 const RATE_PER_JOB = 80;
@@ -81,6 +82,7 @@ const GASOLINE_DETAIL_HEADERS = [
   'Ticket No. (BK)',
   'Customer Name',
   'Technician Name',
+  'All Technicians',
   'Team',
   'Counted',
   'Remarks',
@@ -309,6 +311,7 @@ async function getTicketNoToUrlMap(sheets, spreadsheetId) {
 
   const headers = values[0];
   const ticketNoCol = headers.indexOf('Ticket No');
+  const parentTicketNoCol = headers.indexOf('Parent Ticket No');
   const urlCol = headers.indexOf('URL');
 
   const map = {};
@@ -316,8 +319,15 @@ async function getTicketNoToUrlMap(sheets, spreadsheetId) {
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     const ticketNo = row[ticketNoCol];
-    if (ticketNo) {
-      map[ticketNo] = row[urlCol] || '';
+    const url = (row[urlCol] || '').trim();
+    if (ticketNo && url) {
+      map[String(ticketNo).trim()] = url;
+    }
+    if (parentTicketNoCol !== -1 && row[parentTicketNoCol] && url) {
+      const parentNo = String(row[parentTicketNoCol]).trim();
+      if (!map[parentNo]) {
+        map[parentNo] = url;
+      }
     }
   }
 
@@ -327,20 +337,50 @@ async function getTicketNoToUrlMap(sheets, spreadsheetId) {
 
 
 
+// อ่านรายชื่อช่างทั้งหมดจากชีท Trick2 (คอลัมน์ Job No -> Technician Name)
+// ซึ่ง sync-trick2.js ดึงช่างทุกคนจากตาราง "ตรวจเช็ค/เข้าซ่อม" รวมไว้แล้ว
+async function getTrick2TechniciansMap(sheets, spreadsheetId) {
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId,
+      range: "'Trick2'!C2:E"
+    });
+    const rows = res.data.values || [];
+    const map = {};
+    for (const row of rows) {
+      const ticketNo = String(row[0] || '').trim();
+      const allTechs = String(row[2] || '').trim();
+      if (ticketNo && allTechs) {
+        map[ticketNo] = allTechs;
+        const parentNo = ticketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
+        if (parentNo && !map[parentNo]) {
+          map[parentNo] = allTechs;
+        }
+      }
+    }
+    return map;
+  } catch (err) {
+    console.log('ไม่สามารถอ่านชีท Trick2 ได้ (จะ fallback ไปดึงจาก Rocket): ' + err.message);
+    return {};
+  }
+}
+
+
+
 function countStackFormula(rowNum) {
   return (
-    '=IF(AND(G' + rowNum + '>0,K' + rowNum + '="Approved"),' +
+    '=IF(AND(H' + rowNum + '>0,L' + rowNum + '="Approved"),' +
     'COUNTIFS(' +
     '$E$2:E' + rowNum + ',E' + rowNum + ',' +
-    '$G$2:G' + rowNum + ',">0",' +
-    '$K$2:K' + rowNum + ',"Approved"),"")'
+    '$H$2:H' + rowNum + ',">0",' +
+    '$L$2:L' + rowNum + ',"Approved"),"")'
   );
 }
 
 
 
 function amountFormula(rowNum) {
-  return '=IF(M' + rowNum + '="","",M' + rowNum + '*' + RATE_PER_JOB + ')';
+  return '=IF(N' + rowNum + '="","",N' + rowNum + '*' + RATE_PER_JOB + ')';
 }
 
 
@@ -350,19 +390,19 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName) {
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A1:N1",
+    range: "'" + sheetName + "'!A1:O1",
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [GASOLINE_DETAIL_HEADERS] }
   });
 
   const valuesRes = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A2:C"
+    range: "'" + sheetName + "'!A2:K"
   });
 
   const formulaRes = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!M2:M",
+    range: "'" + sheetName + "'!N2:N",
     valueRenderOption: 'FORMULA'
   });
 
@@ -370,19 +410,31 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName) {
   const formulaRows = formulaRes.data.values || [];
 
   const index = {};
+  const existingAllTechs = {};
+  const existingUrls = {};
   const hasFormula = {};
 
   ticketRows.forEach(function(row, i) {
-    const ticketNo = row[2];
+    const ticketNo = String(row[2] || '').trim();
+    const allTechs = String(row[5] || '').trim();
+    const existingUrl = String(row[10] || '').trim();
     if (ticketNo) {
       const rowNum = i + 2;
       index[ticketNo] = rowNum;
+      if (allTechs) {
+        existingAllTechs[ticketNo] = allTechs;
+      }
+      if (existingUrl) {
+        existingUrls[ticketNo] = existingUrl;
+      }
       hasFormula[rowNum] = Boolean(formulaRows[i] && formulaRows[i][0]);
     }
   });
 
   return {
     index: index,
+    existingAllTechs: existingAllTechs,
+    existingUrls: existingUrls,
     hasFormula: hasFormula,
     lastRow: ticketRows.length + 1
   };
@@ -447,9 +499,9 @@ async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
 
 // แทนที่ batchUpsertGasolineDetail_ ใน gasoline.js —
 // logic เดียวกันเป๊ะ (upsert คีย์ Ticket No, เขียนทับ
-// แค่ A:J แถวเดิม, backfill สูตร M:N ถ้าขาด, แถวใหม่
-// เขียนเต็ม A:N)
-async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, urlMap, lastSync) {
+// A:K แถวเดิม, backfill สูตร N:O ถ้าขาด, แถวใหม่
+// เขียนเต็ม A:O)
+async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, urlMap, techMap, lastSync) {
 
   if (rows.length === 0) {
     return;
@@ -460,26 +512,43 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
 
   rows.forEach(function(r) {
 
-    const url = urlMap[r.ticketNo] || '';
+    const ticketKey = String(r.ticketNo).trim();
+    const jobKey = String(r.jobNo || '').trim();
+
+    // 1. All Technicians:
+    // ลำดับ: จาก techMap (Trick2) -> จาก Gasoline Detail เดิม -> fallback: r.technician
+    const allTechs = techMap[ticketKey] ||
+      (jobKey && techMap[jobKey]) ||
+      (ctx.existingAllTechs && ctx.existingAllTechs[ticketKey]) ||
+      (jobKey && ctx.existingAllTechs && ctx.existingAllTechs[jobKey]) ||
+      r.technician ||
+      '';
+
+    // 2. URL:
+    const url = urlMap[ticketKey] ||
+      (jobKey && urlMap[jobKey]) ||
+      (ctx.existingUrls && ctx.existingUrls[ticketKey]) ||
+      (jobKey && ctx.existingUrls && ctx.existingUrls[jobKey]) ||
+      '';
 
     const dataRow = [
       r.arrivedDate, r.jobNo, r.ticketNo, r.customer,
-      r.technician, r.team, r.counted, r.remarks,
+      r.technician, allTechs, r.team, r.counted, r.remarks,
       lastSync, url
     ];
 
-    const existingRow = ctx.index[r.ticketNo];
+    const existingRow = ctx.index[r.ticketNo] || ctx.index[ticketKey];
 
     if (existingRow) {
 
       data.push({
-        range: "'" + sheetName + "'!A" + existingRow + ':J' + existingRow,
+        range: "'" + sheetName + "'!A" + existingRow + ':K' + existingRow,
         values: [dataRow]
       });
 
       if (!ctx.hasFormula[existingRow]) {
         data.push({
-          range: "'" + sheetName + "'!M" + existingRow + ':N' + existingRow,
+          range: "'" + sheetName + "'!N" + existingRow + ':O' + existingRow,
           values: [[countStackFormula(existingRow), amountFormula(existingRow)]]
         });
         ctx.hasFormula[existingRow] = true;
@@ -505,7 +574,7 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
     });
 
     data.push({
-      range: "'" + sheetName + "'!A" + startRow + ':N' + (startRow + newRows.length - 1),
+      range: "'" + sheetName + "'!A" + startRow + ':O' + (startRow + newRows.length - 1),
       values: fullRows
     });
 
@@ -560,8 +629,8 @@ async function applyReviewValidation(sheets, spreadsheetId, sheetId, lastRow) {
             sheetId: sheetId,
             startRowIndex: 1,
             endRowIndex: lastRow,
-            startColumnIndex: 10,
-            endColumnIndex: 11
+            startColumnIndex: 11,
+            endColumnIndex: 12
           },
           rule: {
             condition: {
@@ -604,6 +673,291 @@ function formatLastSync(date) {
 
 
 /*************************************************
+ * ROCKET URL & TECHNICIANS LOOKUP & BACKFILL
+ * หลัง sync เสร็จ ให้เช็ค All Technicians (F) และ URL (K)
+ * ถ้าช่องไหนว่าง ให้ไปดึงมาจาก Trick2 หรือ Rocket มาเติมเอง
+ *************************************************/
+
+function computeSearchRange(arrivedDate) {
+  let refDate = new Date();
+  if (arrivedDate) {
+    const parts = arrivedDate.split('/');
+    if (parts.length === 3) {
+      const d = Number(parts[0]);
+      const m = Number(parts[1]) - 1;
+      const y = Number(parts[2]);
+      const parsed = new Date(y, m, d);
+      if (!isNaN(parsed.getTime())) {
+        refDate = parsed;
+      }
+    }
+  }
+
+  // ค้นหาย้อนหลัง 1 ปี จากวันที่ถึงหน้างาน เพื่อให้ครอบคลุมตั๋วเก่า
+  const startDate = new Date(refDate.getFullYear() - 1, refDate.getMonth(), refDate.getDate());
+  const now = new Date();
+  const endDate = refDate > now ? refDate : now;
+
+  function fmt(dt) {
+    const dd = String(dt.getDate()).padStart(2, '0');
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    return dd + '/' + mm + '/' + dt.getFullYear();
+  }
+
+  return { start: fmt(startDate), end: fmt(endDate) };
+}
+
+function extractParentTicketId(html, targetNo) {
+  if (!html) return null;
+  if (targetNo) {
+    const cleanTarget = targetNo.trim();
+    const escaped = rocket.escapeRegex(cleanTarget);
+    const rowRegex = new RegExp('<tr[^>]*>[\\s\\S]*?' + escaped + '[\\s\\S]*?ticket_view\\.php\\?id=(\\d+)[\\s\\S]*?<\\/tr>', 'i');
+    const rowMatch = html.match(rowRegex);
+    if (rowMatch) return rowMatch[1];
+
+    const rowRegex2 = new RegExp('<tr[^>]*>[\\s\\S]*?ticket_view\\.php\\?id=(\\d+)[\\s\\S]*?' + escaped + '[\\s\\S]*?<\\/tr>', 'i');
+    const rowMatch2 = html.match(rowRegex2);
+    if (rowMatch2) return rowMatch2[1];
+  }
+  const allIds = rocket.extractParentTicketIds(html);
+  if (allIds.length > 0) {
+    return allIds[0];
+  }
+  return null;
+}
+
+async function fetchTicketInfoFromRocket(auth, ticketNo, jobNo, arrivedDate) {
+  const cleanTicketNo = (ticketNo || '').trim();
+  const cleanJobNo = (jobNo || '').trim();
+
+  let parentNo = '';
+  if (cleanJobNo && !cleanJobNo.includes('.')) {
+    parentNo = cleanJobNo;
+  } else if (cleanTicketNo) {
+    parentNo = cleanTicketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
+  }
+
+  if (!parentNo && !cleanTicketNo) {
+    return { url: '', technicians: '' };
+  }
+
+  const searchRange = computeSearchRange(arrivedDate);
+  const searchTerms = [parentNo, cleanTicketNo].filter(Boolean);
+  const uniqueTerms = [...new Set(searchTerms)];
+
+  let parentId = null;
+
+  for (const term of uniqueTerms) {
+    // 1. ลองค้นหาด้วย date_type='1' (วันที่เปิดตั๋ว)
+    try {
+      const html = await rocket.getParentTicketHtml(auth, searchRange.start, searchRange.end, '1', term);
+      parentId = extractParentTicketId(html, term);
+      if (parentId) break;
+    } catch (e) {
+      console.log('ค้นหา Rocket term=' + term + ' (date_type=1) ล้มเหลว: ' + e.message);
+    }
+
+    // 2. ถ้าไม่เจอ ลอง date_type='2' (วันที่นัดหมาย)
+    try {
+      const html = await rocket.getParentTicketHtml(auth, searchRange.start, searchRange.end, '2', term);
+      parentId = extractParentTicketId(html, term);
+      if (parentId) break;
+    } catch (e) {
+      console.log('ค้นหา Rocket term=' + term + ' (date_type=2) ล้มเหลว: ' + e.message);
+    }
+  }
+
+  if (!parentId) {
+    return { url: '', technicians: '' };
+  }
+
+  try {
+    const checkRepairHtml = await rocket.getCheckRepairHtml(parentId, auth);
+    const subIds = rocket.extractCheckRepairIds(checkRepairHtml);
+    const checkRepairInfo = rocket.extractCheckRepairInfo(checkRepairHtml);
+
+    // ดึง technicians จากตาราง "ตรวจเช็ค/เข้าซ่อม"
+    let techs = '';
+    if (checkRepairInfo[cleanTicketNo] && checkRepairInfo[cleanTicketNo].technicians) {
+      techs = checkRepairInfo[cleanTicketNo].technicians;
+    }
+    if (!techs) {
+      for (const sId of subIds) {
+        if (checkRepairInfo[sId] && checkRepairInfo[sId].technicians) {
+          techs = checkRepairInfo[sId].technicians;
+          break;
+        }
+      }
+    }
+
+    let foundUrl = '';
+    if (subIds.length === 1) {
+      foundUrl = `${rocket.ROCKET_BASE}/main/ticket_checkrepair_view.php?id=${subIds[0]}`;
+    } else if (subIds.length > 1) {
+      // ตรวจสอบแถวที่ตรงกับ cleanTicketNo ในตาราง checkrepair
+      const trRegex = /<tr\s+id=["']tr_(\d+)["'][^>]*>([\s\S]*?)<\/tr>/gi;
+      let trMatch;
+      while ((trMatch = trRegex.exec(checkRepairHtml)) !== null) {
+        const sId = trMatch[1];
+        const trContent = trMatch[2];
+        if (cleanTicketNo && trContent.includes(cleanTicketNo)) {
+          foundUrl = `${rocket.ROCKET_BASE}/main/ticket_checkrepair_view.php?id=${sId}`;
+          if (!techs && checkRepairInfo[sId] && checkRepairInfo[sId].technicians) {
+            techs = checkRepairInfo[sId].technicians;
+          }
+          break;
+        }
+      }
+
+      if (!foundUrl) {
+        for (const sId of subIds) {
+          try {
+            const detailHtml = await rocket.getTicketDetailHtml(sId, auth);
+            const parsed = rocket.parseTicketDetail(detailHtml, sId);
+            if (parsed.ticketNo && cleanTicketNo && parsed.ticketNo === cleanTicketNo) {
+              foundUrl = parsed.url;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (!foundUrl) {
+        foundUrl = `${rocket.ROCKET_BASE}/main/ticket_checkrepair_view.php?id=${subIds[0]}`;
+      }
+    } else {
+      foundUrl = `${rocket.ROCKET_BASE}/main/ticket_view.php?id=${parentId}`;
+    }
+
+    return { url: foundUrl, technicians: techs };
+
+  } catch (err) {
+    console.log('ดึง checkrepair สำหรับ parentId=' + parentId + ' ล้มเหลว: ' + err.message);
+    return { url: `${rocket.ROCKET_BASE}/main/ticket_view.php?id=${parentId}`, technicians: '' };
+  }
+}
+
+async function backfillMissingDataFromRocket(sheets, spreadsheetId, sheetName, auth, urlMap, techMap) {
+
+  console.log('--- ตรวจสอบคอลัมน์ All Technicians (F) และ URL (K) หลัง Sync ---');
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: spreadsheetId,
+    range: "'" + sheetName + "'!A2:K"
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length === 0) {
+    console.log('ชีทว่างเปล่า — ข้ามการตรวจข้อมูล');
+    return;
+  }
+
+  const missing = [];
+  rows.forEach(function(row, i) {
+    const rowNum = i + 2;
+    const ticketNo = String(row[2] || '').trim();
+    const technicianName = String(row[4] || '').trim(); // Col E: Technician Name
+    const allTechs = String(row[5] || '').trim();       // Col F: All Technicians
+    const url = String(row[10] || '').trim();           // Col K: URL
+
+    if (ticketNo && (!allTechs || !url)) {
+      missing.push({
+        rowNum: rowNum,
+        arrivedDate: String(row[0] || '').trim(),
+        jobNo: String(row[1] || '').trim(),
+        ticketNo: ticketNo,
+        technicianName: technicianName,
+        needTechs: !allTechs,
+        needUrl: !url
+      });
+    }
+  });
+
+  if (missing.length === 0) {
+    console.log('คอลัมน์ All Technicians และ URL ครบถ้วนทุกแถว — ไม่มีช่องว่าง');
+    return;
+  }
+
+  console.log('พบแถวที่ต้องเติมข้อมูล ' + missing.length + ' แถว — กำลังดึงข้อมูลจาก Trick2 / Rocket...');
+
+  const updates = [];
+  const rocketInfoCache = {};
+  let filledTechsCount = 0;
+  let filledUrlsCount = 0;
+
+  for (const item of missing) {
+    try {
+      let foundTechs = item.needTechs ? (techMap[item.ticketNo] || (item.jobNo ? techMap[item.jobNo] : '')) : '';
+      let foundUrl = item.needUrl ? (urlMap[item.ticketNo] || (item.jobNo ? urlMap[item.jobNo] : '')) : '';
+
+      // ตรวจแคชรอบนี้
+      if ((item.needTechs && !foundTechs) || (item.needUrl && !foundUrl)) {
+        const cached = rocketInfoCache[item.ticketNo] || (item.jobNo ? rocketInfoCache[item.jobNo] : null);
+        if (cached) {
+          if (item.needTechs && !foundTechs && cached.technicians) foundTechs = cached.technicians;
+          if (item.needUrl && !foundUrl && cached.url) foundUrl = cached.url;
+        }
+      }
+
+      // ถ้ายังขาด ให้ยิง Rocket
+      if ((item.needTechs && !foundTechs) || (item.needUrl && !foundUrl)) {
+        const info = await fetchTicketInfoFromRocket(auth, item.ticketNo, item.jobNo, item.arrivedDate);
+        if (info) {
+          rocketInfoCache[item.ticketNo] = info;
+          if (item.jobNo) rocketInfoCache[item.jobNo] = info;
+          if (item.needTechs && !foundTechs && info.technicians) foundTechs = info.technicians;
+          if (item.needUrl && !foundUrl && info.url) foundUrl = info.url;
+        }
+        await sleep(250);
+      }
+
+      // Fallback สำหรับ All Technicians: ถ้ายังหาไม่เจอ ให้ใช้ Technician Name (Col E)
+      if (item.needTechs && !foundTechs && item.technicianName) {
+        foundTechs = item.technicianName;
+      }
+
+      if (item.needTechs && foundTechs) {
+        updates.push({
+          range: "'" + sheetName + "'!F" + item.rowNum,
+          values: [[foundTechs]]
+        });
+        filledTechsCount++;
+        console.log('แถว ' + item.rowNum + ' [' + item.ticketNo + ']: เติม All Technicians -> ' + foundTechs);
+      }
+
+      if (item.needUrl && foundUrl) {
+        updates.push({
+          range: "'" + sheetName + "'!K" + item.rowNum,
+          values: [[foundUrl]]
+        });
+        filledUrlsCount++;
+        console.log('แถว ' + item.rowNum + ' [' + item.ticketNo + ']: เติม URL -> ' + foundUrl);
+      }
+
+    } catch (err) {
+      console.log('แถว ' + item.rowNum + ' [' + item.ticketNo + '] เกิดข้อผิดพลาด: ' + err.message);
+    }
+  }
+
+  if (updates.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: spreadsheetId,
+      requestBody: {
+        valueInputOption: 'USER_ENTERED',
+        data: updates
+      }
+    });
+    console.log('อัปเดตสำเร็จ: เติม All Technicians ' + filledTechsCount + ' แถว, เติม URL ' + filledUrlsCount + ' แถว');
+  } else {
+    console.log('ไม่พบข้อมูลเพิ่มเติมที่สามารถเติมได้');
+  }
+
+}
+
+
+
+/*************************************************
  * MAIN
  *************************************************/
 
@@ -611,7 +965,7 @@ async function main() {
 
   console.log('========== GASOLINE TEAM SYNC (Node.js / GitHub Actions) ==========');
 
-  const auth = await rocketLogin();
+  const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
   const range = computeRollingRangeBangkok(GASOLINE_WINDOW_DAYS);
@@ -636,15 +990,19 @@ async function main() {
   const sheets = await getSheetsClient();
 
   const urlMap = await getTicketNoToUrlMap(sheets, spreadsheetId);
+  const techMap = await getTrick2TechniciansMap(sheets, spreadsheetId);
   const ctx = await buildRowIndex(sheets, spreadsheetId, GASOLINE_SHEET_NAME);
   const lastSync = formatLastSync(new Date());
 
   const sheetId = await getSheetIdByName(sheets, spreadsheetId, GASOLINE_SHEET_NAME);
-  await upsertRows(sheets, spreadsheetId, sheetId, GASOLINE_SHEET_NAME, rows, ctx, urlMap, lastSync);
+  await upsertRows(sheets, spreadsheetId, sheetId, GASOLINE_SHEET_NAME, rows, ctx, urlMap, techMap, lastSync);
 
   await applyReviewValidation(sheets, spreadsheetId, sheetId, ctx.lastRow);
 
   console.log('DONE — เขียนลงชีท "' + GASOLINE_SHEET_NAME + '" แล้ว (upsert)');
+
+  // หลัง sync เสร็จ ให้ตรวจสอบคอลัมน์ All Technicians (Column F) และ URL (Column K) ถ้าช่องไหนว่างให้ดึงมาเติม
+  await backfillMissingDataFromRocket(sheets, spreadsheetId, GASOLINE_SHEET_NAME, auth, urlMap, techMap);
 
 }
 
