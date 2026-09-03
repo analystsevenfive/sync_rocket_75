@@ -541,12 +541,18 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
 
   ticketRows.forEach(function(row, i) {
     const ticketNo = String(row[2] || '').trim();
+    const techName = String(row[4] || '').trim(); // Col E: Technician Name
     const allTechs = String(row[5] || '').trim();
     const existingUrl = String(row[10] || '').trim();
     const rowNum = i + 3;
 
     if (ticketNo) {
-      index[ticketNo] = rowNum;
+      // ใช้ composite key (Ticket No + Technician Name) เพื่อรองรับกรณี 1 ตั๋วมีช่างหลายคนเคลมค่าน้ำมัน
+      const compositeKey = ticketNo + '__' + techName;
+      index[compositeKey] = rowNum;
+      if (!index[ticketNo]) {
+        index[ticketNo] = rowNum;
+      }
 
       if (allTechs) {
         existingAllTechs[ticketNo] = allTechs;
@@ -647,6 +653,7 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
   rows.forEach(function(r) {
 
     const ticketKey = String(r.ticketNo).trim();
+    const techKey = String(r.technician || '').trim();
     const parentKey = ticketKey.replace(/\.[A-Z0-9]+$/i, '').trim();
 
     // 1. All Technicians:
@@ -673,7 +680,7 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
       lastSync, url
     ];
 
-    const existingRow = ctx.index[r.ticketNo] || ctx.index[ticketKey];
+    const existingRow = ctx.index[ticketKey + '__' + techKey] || ctx.index[r.ticketNo] || ctx.index[ticketKey];
 
     if (existingRow) {
 
@@ -692,7 +699,7 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
 
     } else {
 
-      newRows.push({ ticketNo: r.ticketNo, dataRow: dataRow });
+      newRows.push({ ticketNo: r.ticketNo, technician: r.technician, dataRow: dataRow });
 
     }
 
@@ -715,7 +722,11 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
     });
 
     newRows.forEach(function(nr, i) {
-      ctx.index[nr.ticketNo] = startRow + i;
+      const rowNum = startRow + i;
+      ctx.index[nr.ticketNo + '__' + nr.technician] = rowNum;
+      if (!ctx.index[nr.ticketNo]) {
+        ctx.index[nr.ticketNo] = rowNum;
+      }
     });
 
     ctx.lastRow += newRows.length;
