@@ -512,28 +512,55 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
   const ticketRows = valuesRes.data.values || [];
   const formulaRows = formulaRes.data.values || [];
 
+  // ตรวจจับ URL ที่ซ้ำข้าม Parent Ticket คนละเลข (เกิดจากบั๊กที่เคย fallback ด้วย "ใบงานเปล่า")
+  // ซับทิกเก็ตใน Rocket จะมี ID เฉพาะตัว และต้องอยู่ใต้ Parent Ticket เดียวกันเสมอ
+  const urlToParentMap = {};
+  const crossParentDuplicateUrls = new Set();
+
+  ticketRows.forEach(function(row) {
+    const ticketNo = String(row[2] || '').trim();
+    const existingUrl = String(row[10] || '').trim();
+    if (ticketNo && existingUrl) {
+      const parentNo = ticketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
+      if (!urlToParentMap[existingUrl]) {
+        urlToParentMap[existingUrl] = parentNo;
+      } else if (urlToParentMap[existingUrl] !== parentNo) {
+        crossParentDuplicateUrls.add(existingUrl);
+      }
+    }
+  });
+
+  if (crossParentDuplicateUrls.size > 0) {
+    console.log('พบ URL ที่ซ้ำข้ามตั๋วคนละใบ ' + crossParentDuplicateUrls.size + ' รายการ — จะล้าง URL ที่ผิดเพื่อดึงใหม่จาก Rocket');
+  }
+
   const index = {};
   const existingAllTechs = {};
   const existingUrls = {};
   const hasFormula = {};
 
   ticketRows.forEach(function(row, i) {
-    const jobNo = String(row[1] || '').trim();
     const ticketNo = String(row[2] || '').trim();
     const allTechs = String(row[5] || '').trim();
     const existingUrl = String(row[10] || '').trim();
     const rowNum = i + 3;
 
-    if (ticketNo) index[ticketNo] = rowNum;
-    if (jobNo && !index[jobNo]) index[jobNo] = rowNum;
+    if (ticketNo) {
+      index[ticketNo] = rowNum;
 
-    if (allTechs) {
-      if (ticketNo) existingAllTechs[ticketNo] = allTechs;
-      if (jobNo && !existingAllTechs[jobNo]) existingAllTechs[jobNo] = allTechs;
-    }
-    if (existingUrl) {
-      if (ticketNo) existingUrls[ticketNo] = existingUrl;
-      if (jobNo && !existingUrls[jobNo]) existingUrls[jobNo] = existingUrl;
+      if (allTechs) {
+        existingAllTechs[ticketNo] = allTechs;
+      }
+
+      if (existingUrl) {
+        const parentNo = ticketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
+        // ถ้า URL นี้ซ้ำข้าม Parent Ticket และไม่ใช่ Parent Ticket แรกที่ตรงกับ URL ให้ถือว่าเพี้ยนและไม่เก็บ
+        if (crossParentDuplicateUrls.has(existingUrl) && urlToParentMap[existingUrl] !== parentNo) {
+          console.log('ตรวจพบ URL เพี้ยนในแถว ' + rowNum + ' (' + ticketNo + ') -> ล้าง URL เพื่อดึงใหม่');
+        } else {
+          existingUrls[ticketNo] = existingUrl;
+        }
+      }
     }
     hasFormula[rowNum] = Boolean(formulaRows[i] && formulaRows[i][0]);
   });
@@ -620,22 +647,24 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
   rows.forEach(function(r) {
 
     const ticketKey = String(r.ticketNo).trim();
-    const jobKey = String(r.jobNo || '').trim();
+    const parentKey = ticketKey.replace(/\.[A-Z0-9]+$/i, '').trim();
 
     // 1. All Technicians:
     // ลำดับ: จาก techMap (Trick2) -> จาก Gasoline Detail เดิม -> fallback: r.technician
+    // ใช้เฉพาะ Ticket No หรือ Parent Ticket No เท่านั้น — ห้ามใช้ Job No (เช่น "ใบงานเปล่า")
     const allTechs = techMap[ticketKey] ||
-      (jobKey && techMap[jobKey]) ||
+      (parentKey && techMap[parentKey]) ||
       (ctx.existingAllTechs && ctx.existingAllTechs[ticketKey]) ||
-      (jobKey && ctx.existingAllTechs && ctx.existingAllTechs[jobKey]) ||
+      (parentKey && ctx.existingAllTechs && ctx.existingAllTechs[parentKey]) ||
       r.technician ||
       '';
 
     // 2. URL:
+    // ใช้เฉพาะ Ticket No หรือ Parent Ticket No เท่านั้น — ห้ามใช้ Job No เพราะ "ใบงานเปล่า" จะทำให้ URL เพี้ยน
     const url = urlMap[ticketKey] ||
-      (jobKey && urlMap[jobKey]) ||
+      (parentKey && urlMap[parentKey]) ||
       (ctx.existingUrls && ctx.existingUrls[ticketKey]) ||
-      (jobKey && ctx.existingUrls && ctx.existingUrls[jobKey]) ||
+      (parentKey && ctx.existingUrls && ctx.existingUrls[parentKey]) ||
       '';
 
     const dataRow = [
@@ -1040,24 +1069,26 @@ async function backfillMissingDataFromRocket(sheets, spreadsheetId, sheetName, a
 
   for (const item of missing) {
     try {
-      let foundTechs = item.needTechs ? (techMap[item.ticketNo] || (item.jobNo ? techMap[item.jobNo] : '')) : '';
-      let foundUrl = item.needUrl ? (urlMap[item.ticketNo] || (item.jobNo ? urlMap[item.jobNo] : '')) : '';
+      const parentNo = item.ticketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
 
-      // ตรวจแคชรอบนี้
+      let foundTechs = item.needTechs ? (techMap[item.ticketNo] || (parentNo ? techMap[parentNo] : '')) : '';
+      let foundUrl = item.needUrl ? (urlMap[item.ticketNo] || (parentNo ? urlMap[parentNo] : '')) : '';
+
+      // ตรวจแคชรอบนี้ (เฉพาะ ticketNo หรือ parentNo)
       if ((item.needTechs && !foundTechs) || (item.needUrl && !foundUrl)) {
-        const cached = rocketInfoCache[item.ticketNo] || (item.jobNo ? rocketInfoCache[item.jobNo] : null);
+        const cached = rocketInfoCache[item.ticketNo] || (parentNo ? rocketInfoCache[parentNo] : null);
         if (cached) {
           if (item.needTechs && !foundTechs && cached.technicians) foundTechs = cached.technicians;
           if (item.needUrl && !foundUrl && cached.url) foundUrl = cached.url;
         }
       }
 
-      // ถ้ายังขาด ให้ยิง Rocket
+      // ถ้ายังขาด ให้ยิง Rocket ด้วย item.ticketNo
       if ((item.needTechs && !foundTechs) || (item.needUrl && !foundUrl)) {
         const info = await fetchTicketInfoFromRocket(auth, item.ticketNo, item.jobNo, item.arrivedDate);
         if (info) {
           rocketInfoCache[item.ticketNo] = info;
-          if (item.jobNo) rocketInfoCache[item.jobNo] = info;
+          if (parentNo) rocketInfoCache[parentNo] = info;
           if (item.needTechs && !foundTechs && info.technicians) foundTechs = info.technicians;
           if (item.needUrl && !foundUrl && info.url) foundUrl = info.url;
         }
