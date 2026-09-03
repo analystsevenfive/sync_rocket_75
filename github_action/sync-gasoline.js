@@ -371,9 +371,9 @@ function countStackFormula(rowNum) {
   return (
     '=IF(AND(H' + rowNum + '>0,L' + rowNum + '="Approved"),' +
     'COUNTIFS(' +
-    '$E$2:E' + rowNum + ',E' + rowNum + ',' +
-    '$H$2:H' + rowNum + ',">0",' +
-    '$L$2:L' + rowNum + ',"Approved"),"")'
+    '$E$3:E' + rowNum + ',E' + rowNum + ',' +
+    '$H$3:H' + rowNum + ',">0",' +
+    '$L$3:L' + rowNum + ',"Approved"),"")'
   );
 }
 
@@ -386,23 +386,126 @@ function amountFormula(rowNum) {
 
 
 // แทนที่ buildGasolineDetailRowIndex_ ใน gasoline.js
-async function buildRowIndex(sheets, spreadsheetId, sheetName) {
+async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, totalItems) {
 
-  await sheets.spreadsheets.values.update({
+  // ตรวจสอบว่าแถว 1 ปัจจุบันเป็น Header เดิม ("Date Arrived") หรือไม่
+  // ถ้าใช่ ให้แทรก 1 แถวไว้บนสุด เพื่อให้แถว 1 เป็นช่วงข้อมูล และ Header เลื่อนไปแถว 2
+  try {
+    const a1Check = await sheets.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId,
+      range: "'" + sheetName + "'!A1"
+    });
+    const a1Val = (a1Check.data.values && a1Check.data.values[0] && a1Check.data.values[0][0]) || '';
+    if (a1Val === 'Date Arrived') {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: spreadsheetId,
+        requestBody: {
+          requests: [{
+            insertDimension: {
+              range: {
+                sheetId: sheetId,
+                dimension: 'ROWS',
+                startIndex: 0,
+                endIndex: 1
+              },
+              inheritFromBefore: false
+            }
+          }]
+        }
+      });
+    }
+  } catch (e) {
+    console.log('ตรวจแถว 1:', e.message);
+  }
+
+  const rangeText = 'ช่วงข้อมูล ' + range.start + ' - ' + range.end +
+    ' | จำนวน ' + (totalItems || 0).toLocaleString('en-US') + ' รายการ';
+
+  // เขียนแถว 1 (ช่วงข้อมูล) และแถว 2 (หัวตาราง)
+  await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A1:O1",
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [GASOLINE_DETAIL_HEADERS] }
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: [
+        {
+          range: "'" + sheetName + "'!A1",
+          values: [[rangeText]]
+        },
+        {
+          range: "'" + sheetName + "'!A2:O2",
+          values: [GASOLINE_DETAIL_HEADERS]
+        }
+      ]
+    }
   });
 
+  // จัด Format แถว 1 (Merge, สีพื้นหลัง #fff2cc, ตัวหนา, Freeze 2 แถวแรก)
+  if (sheetId !== null && sheetId !== undefined) {
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              mergeCells: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: GASOLINE_DETAIL_HEADERS.length
+                },
+                mergeType: 'MERGE_ALL'
+              }
+            },
+            {
+              repeatCell: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: GASOLINE_DETAIL_HEADERS.length
+                },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor: { red: 1.0, green: 0.949, blue: 0.8 }, // #fff2cc
+                    textFormat: { bold: true },
+                    horizontalAlignment: 'LEFT',
+                    verticalAlignment: 'MIDDLE'
+                  }
+                },
+                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)'
+              }
+            },
+            {
+              updateSheetProperties: {
+                properties: {
+                  sheetId: sheetId,
+                  gridProperties: {
+                    frozenRowCount: 2
+                  }
+                },
+                fields: 'gridProperties.frozenRowCount'
+              }
+            }
+          ]
+        }
+      });
+    } catch (e) {
+      console.log('จัด Format แถว 1/Freeze:', e.message);
+    }
+  }
+
+  // อ่านข้อมูลเริ่มจากแถว 3 (ข้อมูลจริง)
   const valuesRes = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A2:K"
+    range: "'" + sheetName + "'!A3:K"
   });
 
   const formulaRes = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!N2:N",
+    range: "'" + sheetName + "'!N3:N",
     valueRenderOption: 'FORMULA'
   });
 
@@ -419,7 +522,7 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName) {
     const ticketNo = String(row[2] || '').trim();
     const allTechs = String(row[5] || '').trim();
     const existingUrl = String(row[10] || '').trim();
-    const rowNum = i + 2;
+    const rowNum = i + 3;
 
     if (ticketNo) index[ticketNo] = rowNum;
     if (jobNo && !index[jobNo]) index[jobNo] = rowNum;
@@ -440,7 +543,7 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName) {
     existingAllTechs: existingAllTechs,
     existingUrls: existingUrls,
     hasFormula: hasFormula,
-    lastRow: ticketRows.length + 1
+    lastRow: ticketRows.length + 2
   };
 
 }
@@ -620,7 +723,7 @@ async function getSheetIdByName(sheets, spreadsheetId, sheetName) {
 // แบบ raw พร้อม sheetId ตัวเลข ไม่ใช่ชื่อชีท)
 async function applyReviewValidation(sheets, spreadsheetId, sheetId, lastRow) {
 
-  if (lastRow < 2 || sheetId === null || sheetId === undefined) {
+  if (lastRow < 3 || sheetId === null || sheetId === undefined) {
     return;
   }
 
@@ -631,7 +734,7 @@ async function applyReviewValidation(sheets, spreadsheetId, sheetId, lastRow) {
         setDataValidation: {
           range: {
             sheetId: sheetId,
-            startRowIndex: 1,
+            startRowIndex: 2,
             endRowIndex: lastRow,
             startColumnIndex: 11,
             endColumnIndex: 12
@@ -872,7 +975,7 @@ async function backfillMissingDataFromRocket(sheets, spreadsheetId, sheetName, a
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A2:K"
+    range: "'" + sheetName + "'!A3:K"
   });
 
   const rows = res.data.values || [];
@@ -887,7 +990,7 @@ async function backfillMissingDataFromRocket(sheets, spreadsheetId, sheetName, a
   let skippedNoIdentifier = 0;
 
   rows.forEach(function(row, i) {
-    const rowNum = i + 2;
+    const rowNum = i + 3;
     const jobNo = String(row[1] || '').trim();
     const ticketNo = String(row[2] || '').trim();
     const technicianName = String(row[4] || '').trim(); // Col E: Technician Name
@@ -1038,12 +1141,12 @@ async function main() {
 
   const sheets = await getSheetsClient();
 
+  const sheetId = await getSheetIdByName(sheets, spreadsheetId, GASOLINE_SHEET_NAME);
   const urlMap = await getTicketNoToUrlMap(sheets, spreadsheetId);
   const techMap = await getTrick2TechniciansMap(sheets, spreadsheetId);
-  const ctx = await buildRowIndex(sheets, spreadsheetId, GASOLINE_SHEET_NAME);
+  const ctx = await buildRowIndex(sheets, spreadsheetId, GASOLINE_SHEET_NAME, sheetId, range, rows.length);
   const lastSync = formatLastSync(new Date());
 
-  const sheetId = await getSheetIdByName(sheets, spreadsheetId, GASOLINE_SHEET_NAME);
   await upsertRows(sheets, spreadsheetId, sheetId, GASOLINE_SHEET_NAME, rows, ctx, urlMap, techMap, lastSync);
 
   await applyReviewValidation(sheets, spreadsheetId, sheetId, ctx.lastRow);
