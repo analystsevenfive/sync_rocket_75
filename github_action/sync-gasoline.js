@@ -715,31 +715,40 @@ function extractParentTicketId(html, targetNo) {
   if (!html) return null;
   if (targetNo) {
     const cleanTarget = targetNo.trim();
-    const escaped = rocket.escapeRegex(cleanTarget);
-    const rowRegex = new RegExp('<tr[^>]*>[\\s\\S]*?' + escaped + '[\\s\\S]*?ticket_view\\.php\\?id=(\\d+)[\\s\\S]*?<\\/tr>', 'i');
-    const rowMatch = html.match(rowRegex);
-    if (rowMatch) return rowMatch[1];
+    const baseNo = cleanTarget.replace(/\.[A-Z0-9]+$/i, '').trim();
 
-    const rowRegex2 = new RegExp('<tr[^>]*>[\\s\\S]*?ticket_view\\.php\\?id=(\\d+)[\\s\\S]*?' + escaped + '[\\s\\S]*?<\\/tr>', 'i');
-    const rowMatch2 = html.match(rowRegex2);
-    if (rowMatch2) return rowMatch2[1];
+    for (const num of [cleanTarget, baseNo]) {
+      if (!num) continue;
+      const escaped = rocket.escapeRegex(num);
+      const rowRegex = new RegExp('<tr[^>]*>[\\s\\S]*?' + escaped + '[\\s\\S]*?ticket_view\\.php\\?id=(\\d+)[\\s\\S]*?<\\/tr>', 'i');
+      const rowMatch = html.match(rowRegex);
+      if (rowMatch) return rowMatch[1];
+
+      const rowRegex2 = new RegExp('<tr[^>]*>[\\s\\S]*?ticket_view\\.php\\?id=(\\d+)[\\s\\S]*?' + escaped + '[\\s\\S]*?<\\/tr>', 'i');
+      const rowMatch2 = html.match(rowRegex2);
+      if (rowMatch2) return rowMatch2[1];
+    }
   }
+
   const allIds = rocket.extractParentTicketIds(html);
-  if (allIds.length > 0) {
+  if (allIds.length === 1) {
     return allIds[0];
   }
-  return null;
+  return allIds.length > 0 ? allIds[0] : null;
 }
 
 async function fetchTicketInfoFromRocket(auth, ticketNo, jobNo, arrivedDate) {
   const cleanTicketNo = (ticketNo || '').trim();
   const cleanJobNo = (jobNo || '').trim();
 
+  // เลข Parent Ticket ต้องสกัดจาก cleanTicketNo เป็นหลัก
+  // เช่น BKIN0826-000040.R01 -> BKIN0826-000040
+  // ไม่ใช้ cleanJobNo (เช่น "00750" หรือ "ใบงานเปล่า") เพราะเป็นเลขใบงานภายใน ไม่ใช่เลขตั๋ว Rocket
   let parentNo = '';
-  if (cleanJobNo && !cleanJobNo.includes('.')) {
-    parentNo = cleanJobNo;
-  } else if (cleanTicketNo) {
+  if (cleanTicketNo) {
     parentNo = cleanTicketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
+  } else if (cleanJobNo && /^BK[A-Z]{2}\d{4}-\d+/i.test(cleanJobNo)) {
+    parentNo = cleanJobNo.replace(/\.[A-Z0-9]+$/i, '').trim();
   }
 
   if (!parentNo && !cleanTicketNo) {
@@ -753,23 +762,26 @@ async function fetchTicketInfoFromRocket(auth, ticketNo, jobNo, arrivedDate) {
   let parentId = null;
 
   for (const term of uniqueTerms) {
-    // 1. ลองค้นหาด้วย date_type='1' (วันที่เปิดตั๋ว)
+    // 1. ค้นหาแบบระบุช่วงวันที่ (date_type=1 วันที่เปิดตั๋ว)
     try {
       const html = await rocket.getParentTicketHtml(auth, searchRange.start, searchRange.end, '1', term);
       parentId = extractParentTicketId(html, term);
       if (parentId) break;
-    } catch (e) {
-      console.log('ค้นหา Rocket term=' + term + ' (date_type=1) ล้มเหลว: ' + e.message);
-    }
+    } catch (e) {}
 
-    // 2. ถ้าไม่เจอ ลอง date_type='2' (วันที่นัดหมาย)
+    // 2. ค้นหาแบบระบุช่วงวันที่ (date_type=2 วันที่นัดหมาย)
     try {
       const html = await rocket.getParentTicketHtml(auth, searchRange.start, searchRange.end, '2', term);
       parentId = extractParentTicketId(html, term);
       if (parentId) break;
-    } catch (e) {
-      console.log('ค้นหา Rocket term=' + term + ' (date_type=2) ล้มเหลว: ' + e.message);
-    }
+    } catch (e) {}
+
+    // 3. ค้นหาแบบไม่จำกัดวันที่ (เผื่อตั๋วสร้างก่อนช่วงที่คำนวณ)
+    try {
+      const html = await rocket.getParentTicketHtml(auth, '', '', '1', term);
+      parentId = extractParentTicketId(html, term);
+      if (parentId) break;
+    } catch (e) {}
   }
 
   if (!parentId) {
@@ -795,41 +807,53 @@ async function fetchTicketInfoFromRocket(auth, ticketNo, jobNo, arrivedDate) {
       }
     }
 
-    let foundUrl = '';
-    if (subIds.length === 1) {
-      foundUrl = `${rocket.ROCKET_BASE}/main/ticket_checkrepair_view.php?id=${subIds[0]}`;
-    } else if (subIds.length > 1) {
-      // ตรวจสอบแถวที่ตรงกับ cleanTicketNo ในตาราง checkrepair
+    // หา Sub Ticket ID ที่ตรงกับ cleanTicketNo
+    let matchedSubId = null;
+
+    if (checkRepairInfo[cleanTicketNo] && checkRepairInfo[cleanTicketNo].subId) {
+      matchedSubId = checkRepairInfo[cleanTicketNo].subId;
+    }
+
+    if (!matchedSubId && subIds.length > 1) {
       const trRegex = /<tr\s+id=["']tr_(\d+)["'][^>]*>([\s\S]*?)<\/tr>/gi;
       let trMatch;
       while ((trMatch = trRegex.exec(checkRepairHtml)) !== null) {
         const sId = trMatch[1];
         const trContent = trMatch[2];
         if (cleanTicketNo && trContent.includes(cleanTicketNo)) {
-          foundUrl = `${rocket.ROCKET_BASE}/main/ticket_checkrepair_view.php?id=${sId}`;
+          matchedSubId = sId;
           if (!techs && checkRepairInfo[sId] && checkRepairInfo[sId].technicians) {
             techs = checkRepairInfo[sId].technicians;
           }
           break;
         }
       }
+    }
 
-      if (!foundUrl) {
-        for (const sId of subIds) {
-          try {
-            const detailHtml = await rocket.getTicketDetailHtml(sId, auth);
-            const parsed = rocket.parseTicketDetail(detailHtml, sId);
-            if (parsed.ticketNo && cleanTicketNo && parsed.ticketNo === cleanTicketNo) {
-              foundUrl = parsed.url;
-              break;
-            }
-          } catch (e) {}
-        }
-      }
+    if (!matchedSubId && subIds.length === 1) {
+      matchedSubId = subIds[0];
+    }
 
-      if (!foundUrl) {
-        foundUrl = `${rocket.ROCKET_BASE}/main/ticket_checkrepair_view.php?id=${subIds[0]}`;
+    if (!matchedSubId && subIds.length > 1) {
+      for (const sId of subIds) {
+        try {
+          const detailHtml = await rocket.getTicketDetailHtml(sId, auth);
+          const parsed = rocket.parseTicketDetail(detailHtml, sId);
+          if (parsed.ticketNo && cleanTicketNo && parsed.ticketNo === cleanTicketNo) {
+            matchedSubId = sId;
+            break;
+          }
+        } catch (e) {}
       }
+    }
+
+    if (!matchedSubId && subIds.length > 0) {
+      matchedSubId = subIds[0];
+    }
+
+    let foundUrl = '';
+    if (matchedSubId) {
+      foundUrl = `${rocket.ROCKET_BASE}/main/ticket_checkrepair_view.php?id=${matchedSubId}`;
     } else {
       foundUrl = `${rocket.ROCKET_BASE}/main/ticket_view.php?id=${parentId}`;
     }
