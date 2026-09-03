@@ -415,20 +415,24 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName) {
   const hasFormula = {};
 
   ticketRows.forEach(function(row, i) {
+    const jobNo = String(row[1] || '').trim();
     const ticketNo = String(row[2] || '').trim();
     const allTechs = String(row[5] || '').trim();
     const existingUrl = String(row[10] || '').trim();
-    if (ticketNo) {
-      const rowNum = i + 2;
-      index[ticketNo] = rowNum;
-      if (allTechs) {
-        existingAllTechs[ticketNo] = allTechs;
-      }
-      if (existingUrl) {
-        existingUrls[ticketNo] = existingUrl;
-      }
-      hasFormula[rowNum] = Boolean(formulaRows[i] && formulaRows[i][0]);
+    const rowNum = i + 2;
+
+    if (ticketNo) index[ticketNo] = rowNum;
+    if (jobNo && !index[jobNo]) index[jobNo] = rowNum;
+
+    if (allTechs) {
+      if (ticketNo) existingAllTechs[ticketNo] = allTechs;
+      if (jobNo && !existingAllTechs[jobNo]) existingAllTechs[jobNo] = allTechs;
     }
+    if (existingUrl) {
+      if (ticketNo) existingUrls[ticketNo] = existingUrl;
+      if (jobNo && !existingUrls[jobNo]) existingUrls[jobNo] = existingUrl;
+    }
+    hasFormula[rowNum] = Boolean(formulaRows[i] && formulaRows[i][0]);
   });
 
   return {
@@ -853,19 +857,30 @@ async function backfillMissingDataFromRocket(sheets, spreadsheetId, sheetName, a
     return;
   }
 
+  console.log('กำลังตรวจสอบข้อมูลทั้งหมด ' + rows.length + ' แถวในชีท...');
+
   const missing = [];
+  let skippedNoIdentifier = 0;
+
   rows.forEach(function(row, i) {
     const rowNum = i + 2;
+    const jobNo = String(row[1] || '').trim();
     const ticketNo = String(row[2] || '').trim();
     const technicianName = String(row[4] || '').trim(); // Col E: Technician Name
     const allTechs = String(row[5] || '').trim();       // Col F: All Technicians
     const url = String(row[10] || '').trim();           // Col K: URL
 
-    if (ticketNo && (!allTechs || !url)) {
+    const identifier = ticketNo || jobNo;
+    if (!identifier) {
+      skippedNoIdentifier++;
+      return;
+    }
+
+    if (!allTechs || !url) {
       missing.push({
         rowNum: rowNum,
         arrivedDate: String(row[0] || '').trim(),
-        jobNo: String(row[1] || '').trim(),
+        jobNo: jobNo,
         ticketNo: ticketNo,
         technicianName: technicianName,
         needTechs: !allTechs,
@@ -874,12 +889,22 @@ async function backfillMissingDataFromRocket(sheets, spreadsheetId, sheetName, a
     }
   });
 
+  if (skippedNoIdentifier > 0) {
+    console.log('พบแถวที่ไม่มีทั้ง Job No และ Ticket No: ' + skippedNoIdentifier + ' แถว (ข้าม)');
+  }
+
   if (missing.length === 0) {
-    console.log('คอลัมน์ All Technicians และ URL ครบถ้วนทุกแถว — ไม่มีช่องว่าง');
+    console.log('คอลัมน์ All Technicians และ URL ครบถ้วนทุกแถว (' + rows.length + ' แถว) — ไม่มีช่องว่าง');
     return;
   }
 
-  console.log('พบแถวที่ต้องเติมข้อมูล ' + missing.length + ' แถว — กำลังดึงข้อมูลจาก Trick2 / Rocket...');
+  console.log('พบแถวที่ต้องเติมข้อมูล ' + missing.length + ' แถว:');
+  missing.forEach(function(m) {
+    const missingList = [];
+    if (m.needTechs) missingList.push('All Technicians');
+    if (m.needUrl) missingList.push('URL');
+    console.log('  - แถว ' + m.rowNum + ': Ticket=' + (m.ticketNo || '-') + ', Job=' + (m.jobNo || '-') + ' ขาด [' + missingList.join(', ') + ']');
+  });
 
   const updates = [];
   const rocketInfoCache = {};
