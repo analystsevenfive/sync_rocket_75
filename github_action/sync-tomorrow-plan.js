@@ -54,11 +54,12 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const range = rocket.computeTomorrowRangeBangkok();
-  console.log('วันพรุ่งนี้ (นัดหมาย): ' + range.start);
+  // สำหรับทดสอบ: เปลี่ยนเป็นวันนี้ (computeTodayRangeBangkok)
+  const range = rocket.computeTodayRangeBangkok();
+  console.log('วันที่นัดหมาย (วันนี้ สำหรับ TEST): ' + range.start);
 
   // ==========================================
-  // 1. PARENT TICKETS ที่มีนัดหมายพรุ่งนี้ (date_type=2)
+  // 1. PARENT TICKETS ที่มีนัดหมายวันนี้ (date_type=2)
   // ==========================================
 
   const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, DATE_TYPE_APPOINTMENT);
