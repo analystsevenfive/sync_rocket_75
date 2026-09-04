@@ -220,6 +220,48 @@ async function batchUpsert(sheets, spreadsheetId, sheetId, sheetName, headers, c
 
 
 
+// replaceSheetData: เขียนทับทั้งชีทด้วยข้อมูลใหม่ที่จัดเรียงแล้ว (เหมาะสำหรับ daily snapshot sheet)
+// 1. เขียน header แถวที่ 1
+// 2. ล้างข้อมูลแถวที่ 2 เป็นต้นไป
+// 3. เขียนแถวข้อมูลใหม่ทั้งหมดตั้งแต่แถว 2 ตามลำดับที่ส่งมา
+async function replaceSheetData(sheets, spreadsheetId, sheetId, sheetName, headers, rows) {
+
+  const lastCol = columnLetter(headers.length);
+
+  // 1. เขียน header แถว 1
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: spreadsheetId,
+    range: "'" + sheetName + "'!A1:" + lastCol + '1',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [headers] }
+  });
+
+  // 2. ล้างข้อมูลเก่าตั้งแต่แถว 2 ลงไป
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: spreadsheetId,
+    range: "'" + sheetName + "'!A2:" + lastCol
+  });
+
+  // 3. ถ้ามีข้อมูลใหม่ ให้เขียนต่อตั้งแต่แถว 2
+  if (rows.length > 0) {
+    await ensureGridSize(sheets, spreadsheetId, sheetId, rows.length + 50);
+
+    const values = rows.map(function(r) {
+      return Array.isArray(r) ? r : (r.row || r);
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: spreadsheetId,
+      range: "'" + sheetName + "'!A2:" + lastCol + (rows.length + 1),
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: values }
+    });
+  }
+
+}
+
+
+
 // pruneStaleRows: ลบแถวที่ key ไม่อยู่ใน validKeys ชุด
 // ล่าสุด — รวมแถวติดกันเป็นช่วงต่อเนื่องแล้วยิง
 // batchUpdate (spreadsheets.batchUpdate ไม่ใช่ values.
@@ -389,6 +431,7 @@ module.exports = {
   ensureSheetAndBuildIndex,
   ensureGridSize,
   batchUpsert,
+  replaceSheetData,
   getClosedIdsFromSheet,
   getIdToValueMap,
   pruneStaleRows

@@ -350,6 +350,28 @@ function isMatchingDateParts(dateStr, targetParts) {
 
 
 
+// แปลง appointment string เช่น "04 Sep 2026 08:00" เป็น timestamp เพื่อใช้จัดเรียงตามเวลาจากเช้าไปเย็น
+function parseAppointmentTimestamp(appointmentStr) {
+
+  if (!appointmentStr || typeof appointmentStr !== 'string') {
+    return Infinity;
+  }
+
+  const parts = parseDateParts(appointmentStr);
+  const timeMatch = appointmentStr.match(/(\d{1,2}):(\d{2})/);
+  const hours = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+  const minutes = timeMatch ? parseInt(timeMatch[2], 10) : 0;
+
+  if (parts) {
+    return new Date(parts.year, parts.month - 1, parts.day, hours, minutes).getTime();
+  }
+
+  return Infinity;
+
+}
+
+
+
 function formatDateTimeBangkok(date) {
 
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -799,6 +821,7 @@ module.exports = {
   computeTodayRangeBangkok,
   parseDateParts,
   isMatchingDateParts,
+  parseAppointmentTimestamp,
   formatDateTimeBangkok,
   getParentTicketHtml,
   extractParentTicketIds,

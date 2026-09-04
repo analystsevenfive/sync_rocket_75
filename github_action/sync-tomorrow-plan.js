@@ -122,6 +122,19 @@ async function main() {
 
   console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันพรุ่งนี้จริง: ' + tomorrowTickets.length);
 
+  // ==========================================
+  // 4. SORT BY APPOINTMENT (จัดเรียงจากเช้า ไปเย็น)
+  // ==========================================
+
+  tomorrowTickets.sort(function(a, b) {
+    const timeA = rocket.parseAppointmentTimestamp(a.appointment);
+    const timeB = rocket.parseAppointmentTimestamp(b.appointment);
+    if (timeA !== timeB) {
+      return timeA - timeB;
+    }
+    return (a.ticketNo || '').localeCompare(b.ticketNo || '');
+  });
+
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) {
     throw new Error('ไม่พบ SPREADSHEET_ID ใน environment variables');
@@ -131,34 +144,20 @@ async function main() {
   // ต่างจาก SpreadsheetApp — Sheets API ไม่สร้างแท็บ
   // ใหม่ให้อัตโนมัติ ต้องเช็ค+สร้างเองก่อนเสมอ
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, PLAN_SHEET_NAME);
-  await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, tomorrowTickets.length + 200);
 
   // ==========================================
-  // 4. PRUNE — ลิสต์นี้เป็น snapshot ของพรุ่งนี้เท่านั้น
-  // ลบแถวเดิมที่ไม่อยู่ในแผนพรุ่งนี้ (รวมทั้งตั๋ว revision เก่า)
-  // ==========================================
-
-  const validTomorrowIds = new Set(tomorrowTickets.map(function(t) { return String(t.ticketId); }));
-  const prunedCount = await sheetsLib.pruneStaleRows(
-    sheets, spreadsheetId, sheetId, PLAN_SHEET_NAME, TICKET_ID_COL, validTomorrowIds
-  );
-  if (prunedCount > 0) {
-    console.log('ลบ ' + prunedCount + ' แถวที่ไม่มีนัดหมายพรุ่งนี้แล้ว');
-  }
-
-  // ==========================================
-  // 5. UPSERT
+  // 5. WRITE TO GOOGLE SHEET (เขียนทับทั้งชีทตามลำดับเวลาเช้าไปเย็น)
   // ==========================================
 
   const lastSync = rocket.formatDateTimeBangkok(new Date());
   const rows = tomorrowTickets.map(function(r) {
-    return { key: String(r.ticketId), row: planToRow(r, lastSync) };
+    return planToRow(r, lastSync);
   });
 
-  const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, PLAN_SHEET_NAME, PLAN_HEADERS.concat(['Ticket ID']), TICKET_ID_COL);
-  await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, PLAN_SHEET_NAME, PLAN_HEADERS.concat(['Ticket ID']), ctx, rows);
+  const fullHeaders = PLAN_HEADERS.concat(['Ticket ID']);
+  await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, PLAN_SHEET_NAME, fullHeaders, rows);
 
-  console.log('เขียนแล้ว ' + rows.length + '/' + tomorrowTickets.length);
+  console.log('เขียนแล้ว ' + rows.length + '/' + tomorrowTickets.length + ' (เรียงตามเวลานัดหมาย เช้า ➔ เย็น)');
   console.log('DONE');
 
 }
