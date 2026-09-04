@@ -270,14 +270,22 @@ async function fetchDepartmentIds(auth, html) {
   return Array.from(deptIds);
 }
 
+function forceTextIfNumeric(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  const str = String(value).trim();
+  return /^\d+$/.test(str) ? "'" + str : str;
+}
+
 function employeeToRow(emp, lastSync) {
   return [
     emp.position || '',
     emp.level || '',
-    emp.employeeId || '',
+    forceTextIfNumeric(emp.employeeId),
     emp.fullName || '',
     emp.nickname || '',
-    emp.desk || '',
+    forceTextIfNumeric(emp.desk),
     lastSync
   ];
 }
