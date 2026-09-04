@@ -29,8 +29,23 @@ const PARENT_CONCURRENCY = 30;
 const SUB_CONCURRENCY = 30;
 
 const PLAN_HEADERS = [
-  'Ticket ID', 'Ticket No', 'Appointment', 'Customer', 'Branch', 'Contact',
-  'Problem Reported', 'Product Name', 'Technician', 'Phone', 'Team', 'Serial', 'URL', 'Last Sync'
+  'Ticket ID',
+  'Ticket No',
+  'Report Date',
+  'Appointment',
+  'End Time',
+  'Inspection Status',
+  'Customer',
+  'Branch',
+  'Contact',
+  'Phone',
+  'Problem Reported',
+  'Product Name',
+  'Technician',
+  'Team',
+  'Serial',
+  'URL',
+  'Last Sync'
 ];
 
 
@@ -47,14 +62,17 @@ function planToRow(d, lastSync) {
   return [
     d.ticketId,
     d.ticketNo,
+    d.reportDate || '',
     d.appointment,
+    d.endTime || '',
+    d.inspectionStatus || '',
     d.customer,
     d.branch,
     d.contact,
+    forceTextIfNumeric(d.phone),
     d.problem,
     d.productName,
     d.technician,
-    forceTextIfNumeric(d.phone),
     d.team || '',
     forceTextIfNumeric(d.serial),
     d.url,
@@ -148,7 +166,31 @@ async function main() {
   console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันพรุ่งนี้จริง: ' + tomorrowTickets.length);
 
   // ==========================================
-  // 4. SORT BY APPOINTMENT (จัดเรียงจากเช้า ไปเย็น)
+  // 4. FETCH INSPECTION STATUS (ดูการตรวจงาน)
+  // ==========================================
+
+  if (tomorrowTickets.length > 0) {
+    console.log('กำลังดึงสถานะการตรวจงาน (ModalView_inspector)...');
+    const parentIdsToFetch = [...new Set(tomorrowTickets.map(function(t) {
+      return t.parentTicketId || t.ticketId;
+    }).filter(Boolean))];
+
+    const inspectorMap = {};
+    await rocket.mapConcurrent(parentIdsToFetch, 20, async function(parentId) {
+      const modalHtml = await rocket.getInspectorModalHtml(parentId, auth);
+      const parsed = rocket.parseInspectorModal(modalHtml);
+      inspectorMap[String(parentId)] = parsed;
+    });
+
+    tomorrowTickets.forEach(function(t) {
+      const pid = String(t.parentTicketId || t.ticketId);
+      const insp = inspectorMap[pid] || {};
+      t.inspectionStatus = insp.status || '';
+    });
+  }
+
+  // ==========================================
+  // 5. SORT BY APPOINTMENT (จัดเรียงจากเช้า ไปเย็น)
   // ==========================================
 
   tomorrowTickets.sort(function(a, b) {

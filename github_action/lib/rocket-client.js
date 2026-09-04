@@ -728,6 +728,84 @@ async function getParentPageHtml(parentId, auth) {
 
 
 /*************************************************
+ * INSPECTOR MODAL (ModalView_inspector.php)
+ *************************************************/
+
+async function getInspectorModalHtml(ticketId, auth) {
+
+  const headers = {
+    Origin: ROCKET_BASE,
+    Referer: ROCKET_BASE + '/main/ticket_view.php?id=' + ticketId,
+    'X-Requested-With': 'XMLHttpRequest'
+  };
+  if (auth.cookie) {
+    headers.Cookie = auth.cookie;
+  }
+
+  const body = new URLSearchParams();
+  body.set('id', String(ticketId));
+  body.set('ticket_id', String(ticketId));
+  body.set('token', auth.token);
+  body.set('key', auth.key);
+
+  try {
+    const res = await fetchWithTimeout(
+      ROCKET_BASE + '/main/ajax/ticket_view/inspector/ModalView_inspector.php',
+      { method: 'POST', headers: headers, body: body }
+    );
+    if (res.status === 200) {
+      return await res.text();
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return '';
+
+}
+
+
+
+function parseInspectorModal(html) {
+
+  if (!html) {
+    return { status: '', type: '', inspector: '', note: '' };
+  }
+
+  const statusRegex = /<(?:label|b|strong|th|dt)[^>]*>\s*สถานะ\s*:?\s*<\/(?:label|b|strong|th|dt)>[\s\S]*?<(?:div|span|td|dd|p)[^>]*>([\s\S]*?)<\/(?:div|span|td|dd|p)>/i;
+  const statusMatch = html.match(statusRegex);
+  let status = statusMatch ? cleanText(statusMatch[1]) : '';
+
+  if (!status) {
+    if (html.includes('งานจบ')) status = 'งานจบ';
+    else if (html.includes('งานไม่จบ')) status = 'งานไม่จบ';
+    else if (html.includes('รอตรวจงาน')) status = 'รอตรวจงาน';
+  }
+
+  const typeRegex = /<(?:label|b|strong|th|dt)[^>]*>\s*ประเภท\s*:?\s*<\/(?:label|b|strong|th|dt)>[\s\S]*?<(?:div|span|td|dd|p)[^>]*>([\s\S]*?)<\/(?:div|span|td|dd|p)>/i;
+  const typeMatch = html.match(typeRegex);
+  const type = typeMatch ? cleanText(typeMatch[1]) : '';
+
+  const inspectorRegex = /<(?:label|b|strong|th|dt)[^>]*>\s*ผู้ตรวจ\s*:?\s*<\/(?:label|b|strong|th|dt)>[\s\S]*?<(?:div|span|td|dd|p)[^>]*>([\s\S]*?)<\/(?:div|span|td|dd|p)>/i;
+  const inspectorMatch = html.match(inspectorRegex);
+  const inspector = inspectorMatch ? cleanText(inspectorMatch[1]) : '';
+
+  const noteRegex = /<(?:label|b|strong|th|dt)[^>]*>\s*หมายเหตุ\s*:?\s*<\/(?:label|b|strong|th|dt)>[\s\S]*?<(?:div|span|td|dd|p)[^>]*>([\s\S]*?)<\/(?:div|span|td|dd|p)>/i;
+  const noteMatch = html.match(noteRegex);
+  const note = noteMatch ? cleanText(noteMatch[1]) : '';
+
+  return {
+    status: status,
+    type: type,
+    inspector: inspector,
+    note: note
+  };
+
+}
+
+
+
+/*************************************************
  * HTML HELPERS (port ตรงจาก trick.js — logic เดิมเป๊ะ)
  *************************************************/
 
@@ -899,6 +977,8 @@ module.exports = {
   getTicketDetailHtml,
   parseTicketDetail,
   getParentPageHtml,
+  getInspectorModalHtml,
+  parseInspectorModal,
   decodeXmlEntities,
   cleanText,
   escapeRegex,

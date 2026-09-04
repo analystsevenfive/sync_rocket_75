@@ -3,7 +3,12 @@
  *
  * รายงานตั๋วที่มี "วันที่นัดหมาย" (appointment) ตรงกับ
  * วันเมื่อวานเสมอ (ตามเวลากรุงเทพ)
- * โครงสร้างคอลัมน์เหมือน Tomorrow Technician Plan
+ *
+ * คอลัมน์ (Header ภาษาอังกฤษ):
+ *   Ticket ID, Ticket No, Report Date, Appointment, End Time,
+ *   Inspection Status, Customer, Branch, Contact, Phone,
+ *   Problem Reported, Product Name, Technician, Team, Serial,
+ *   URL, Last Sync
  *************************************************/
 
 const rocket = require('./lib/rocket-client');
@@ -14,10 +19,26 @@ const DATE_TYPE_APPOINTMENT = '2';
 
 const PARENT_CONCURRENCY = 30;
 const SUB_CONCURRENCY = 30;
+const INSPECTOR_CONCURRENCY = 20;
 
 const HEADERS = [
-  'Ticket ID', 'Ticket No', 'Appointment', 'Customer', 'Branch', 'Contact',
-  'Problem Reported', 'Product Name', 'Technician', 'Phone', 'Team', 'Serial', 'URL', 'Last Sync'
+  'Ticket ID',
+  'Ticket No',
+  'Report Date',
+  'Appointment',
+  'End Time',
+  'Inspection Status',
+  'Customer',
+  'Branch',
+  'Contact',
+  'Phone',
+  'Problem Reported',
+  'Product Name',
+  'Technician',
+  'Team',
+  'Serial',
+  'URL',
+  'Last Sync'
 ];
 
 
@@ -36,14 +57,17 @@ function jobToRow(d, lastSync) {
   return [
     d.ticketId,
     d.ticketNo,
+    d.reportDate || '',
     d.appointment,
+    d.endTime || '',
+    d.inspectionStatus || '',
     d.customer,
     d.branch,
     d.contact,
+    forceTextIfNumeric(d.phone),
     d.problem,
     d.productName,
     d.technician,
-    forceTextIfNumeric(d.phone),
     d.team || '',
     forceTextIfNumeric(d.serial),
     d.url,
@@ -135,7 +159,31 @@ async function main() {
   console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันเมื่อวานจริง: ' + yesterdayTickets.length);
 
   // ==========================================
-  // 4. SORT BY APPOINTMENT (จัดเรียงจากเช้า ไปเย็น)
+  // 4. FETCH INSPECTION STATUS (ดูการตรวจงาน)
+  // ==========================================
+
+  if (yesterdayTickets.length > 0) {
+    console.log('กำลังดึงสถานะการตรวจงาน (ModalView_inspector)...');
+    const parentIdsToFetch = [...new Set(yesterdayTickets.map(function(t) {
+      return t.parentTicketId || t.ticketId;
+    }).filter(Boolean))];
+
+    const inspectorMap = {};
+    await rocket.mapConcurrent(parentIdsToFetch, INSPECTOR_CONCURRENCY, async function(parentId) {
+      const modalHtml = await rocket.getInspectorModalHtml(parentId, auth);
+      const parsed = rocket.parseInspectorModal(modalHtml);
+      inspectorMap[String(parentId)] = parsed;
+    });
+
+    yesterdayTickets.forEach(function(t) {
+      const pid = String(t.parentTicketId || t.ticketId);
+      const insp = inspectorMap[pid] || {};
+      t.inspectionStatus = insp.status || '';
+    });
+  }
+
+  // ==========================================
+  // 5. SORT BY APPOINTMENT (จัดเรียงจากเช้า ไปเย็น)
   // ==========================================
 
   yesterdayTickets.sort(function(a, b) {
@@ -156,7 +204,7 @@ async function main() {
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, SHEET_NAME);
 
   // ==========================================
-  // 5. WRITE TO GOOGLE SHEET (เขียนทับทั้งชีทตามลำดับเวลาเช้าไปเย็น)
+  // 6. WRITE TO GOOGLE SHEET (เขียนทับทั้งชีทตามลำดับเวลาเช้าไปเย็น)
   // ==========================================
 
   const lastSync = rocket.formatDateTimeBangkok(new Date());
