@@ -67,23 +67,28 @@ async function main() {
   console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length);
 
   // ==========================================
-  // 2. CANDIDATE SUB TICKETS ต่อ parent
-  // (checkrepair.php จะคืนทุก revision .R01, .R02... ของ parent)
+  // 2. CANDIDATE SUB TICKETS + ช่าง/ทีม ต่อ parent
+  // (checkrepair.php จะคืนทุก revision .R01, .R02... ของ parent และมีชื่อช่างที่รับผิดชอบ)
   // ==========================================
 
   let candidateSubIds = [];
+  let infoMap = {};
 
   if (parentIds.length > 0) {
     const checkRepairResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
       const html = await rocket.getCheckRepairHtml(parentId, auth);
-      return rocket.extractCheckRepairIds(html);
+      return {
+        ids: rocket.extractCheckRepairIds(html),
+        info: rocket.extractCheckRepairInfo(html)
+      };
     });
 
     checkRepairResults.forEach(function(r, i) {
       if (r && r.__error) {
         console.log('ERROR Parent ' + parentIds[i] + ': ' + r.__error);
-      } else if (Array.isArray(r)) {
-        candidateSubIds = candidateSubIds.concat(r);
+      } else if (r) {
+        candidateSubIds = candidateSubIds.concat(r.ids);
+        Object.assign(infoMap, r.info);
       }
     });
     candidateSubIds = [...new Set(candidateSubIds)];
@@ -104,6 +109,8 @@ async function main() {
       if (!ticket.ticketNo && !ticket.status) {
         throw new Error('หน้าที่ได้ไม่ใช่ ticket detail จริง (parse ไม่สำเร็จ)');
       }
+      const info = infoMap[String(subId)] || {};
+      ticket.technician = info.technicians || ticket.technician || '';
       return ticket;
     });
 

@@ -653,7 +653,7 @@ function parseTicketDetail(html, ticketId) {
     solution: getH5Value(html, 'การแก้ไข'),
     repairNote: getH5Value(html, 'บันทึกการซ่อม'),
     partFailureCause: getH5Value(html, 'สาเหตุการชำรุดของอะไหล่'),
-    technician: getH5Value(html, 'ช่างเทคนิค'),
+    technician: getH5Value(html, 'ช่างเทคนิค') || extractRelatedPerson(html),
 
     url: ROCKET_BASE + '/main/ticket_checkrepair_view.php?id=' + ticketId
   };
@@ -811,6 +811,34 @@ function extractRegex(text, regex) {
 
 
 
+// ดึงชื่อช่าง/ผู้รับผิดชอบจากบล็อก "ผู้เกี่ยวข้อง" ในหน้า ticket_checkrepair_view.php
+function extractRelatedPerson(html) {
+
+  if (!html || typeof html !== 'string') {
+    return '';
+  }
+
+  const idx = html.indexOf('ผู้เกี่ยวข้อง');
+  if (idx === -1) {
+    return '';
+  }
+
+  const chunk = html.substring(idx, idx + 1000);
+  const textMatches = chunk.match(/<(?:div|span|a|p|label)[^>]*>([\s\S]*?)<\/(?:div|span|a|p|label)>/gi) || [];
+
+  for (const item of textMatches) {
+    const cleaned = cleanText(item);
+    if (cleaned && cleaned !== 'ผู้เกี่ยวข้อง' && !cleaned.includes('http') && cleaned.length > 1 && cleaned.length < 50) {
+      return cleaned;
+    }
+  }
+
+  return '';
+
+}
+
+
+
 module.exports = {
   ROCKET_BASE,
   rocketLogin,
@@ -837,6 +865,7 @@ module.exports = {
   getDtValue,
   getH5Value,
   extractBeforeLabel,
+  extractRelatedPerson,
   extractLastBreadcrumbText,
   extractRegex
 };
