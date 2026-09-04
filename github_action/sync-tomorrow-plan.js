@@ -63,13 +63,14 @@ async function main() {
 
   const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, DATE_TYPE_APPOINTMENT);
   const parentIds = rocket.extractParentTicketIds(parentHtml);
-  console.log('PARENT TICKETS ที่มีนัดหมายพรุ่งนี้: ' + parentIds.length);
+  console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length);
 
   // ==========================================
-  // 2. SUB TICKETS ต่อ parent
+  // 2. CANDIDATE SUB TICKETS ต่อ parent
+  // (checkrepair.php จะคืนทุก revision .R01, .R02... ของ parent)
   // ==========================================
 
-  let subIds = [];
+  let candidateSubIds = [];
 
   if (parentIds.length > 0) {
     const checkRepairResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
@@ -81,13 +82,44 @@ async function main() {
       if (r && r.__error) {
         console.log('ERROR Parent ' + parentIds[i] + ': ' + r.__error);
       } else if (Array.isArray(r)) {
-        subIds = subIds.concat(r);
+        candidateSubIds = candidateSubIds.concat(r);
       }
     });
-    subIds = [...new Set(subIds)];
+    candidateSubIds = [...new Set(candidateSubIds)];
   }
 
-  console.log('SUB TICKETS: ' + subIds.length);
+  console.log('CANDIDATE SUB TICKETS ทั้งหมด: ' + candidateSubIds.length);
+
+  // ==========================================
+  // 3. FETCH DETAIL + FILTER เฉพาะตั๋วที่นัดหมายตรงกับวันพรุ่งนี้จริงๆ
+  // ==========================================
+
+  let tomorrowTickets = [];
+
+  if (candidateSubIds.length > 0) {
+    const detailResults = await rocket.mapConcurrent(candidateSubIds, SUB_CONCURRENCY, async function(subId) {
+      const html = await rocket.getTicketDetailHtml(subId, auth);
+      const ticket = rocket.parseTicketDetail(html, subId);
+      if (!ticket.ticketNo && !ticket.status) {
+        throw new Error('หน้าที่ได้ไม่ใช่ ticket detail จริง (parse ไม่สำเร็จ)');
+      }
+      return ticket;
+    });
+
+    detailResults.forEach(function(r, i) {
+      if (r && r.__error) {
+        console.log('ERROR SubTicket ' + candidateSubIds[i] + ': ' + r.__error);
+      } else if (r) {
+        if (rocket.isMatchingDateParts(r.appointment, range.dateParts)) {
+          tomorrowTickets.push(r);
+        } else {
+          console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (นัดหมาย: "' + (r.appointment || 'ไม่มี') + '" ไม่ใช่วันพรุ่งนี้)');
+        }
+      }
+    });
+  }
+
+  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันพรุ่งนี้จริง: ' + tomorrowTickets.length);
 
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) {
@@ -98,50 +130,34 @@ async function main() {
   // ต่างจาก SpreadsheetApp — Sheets API ไม่สร้างแท็บ
   // ใหม่ให้อัตโนมัติ ต้องเช็ค+สร้างเองก่อนเสมอ
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, PLAN_SHEET_NAME);
-  await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, subIds.length + 200);
+  await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, tomorrowTickets.length + 200);
 
   // ==========================================
-  // 3. PRUNE — ลิสต์นี้เป็น snapshot ของพรุ่งนี้เท่านั้น
-  // ตั๋วที่นัดหมายเลื่อน/ยกเลิกไปแล้วต้องหายจากชีทเลย
-  // (ต่างจาก Tickets ที่ 0 รายการถือว่าผิดปกติ — ที่นี่ 0
-  // รายการคือ "พรุ่งนี้ไม่มีนัดหมาย" ซึ่งเป็นไปได้จริง)
+  // 4. PRUNE — ลิสต์นี้เป็น snapshot ของพรุ่งนี้เท่านั้น
+  // ลบแถวเดิมที่ไม่อยู่ในแผนพรุ่งนี้ (รวมทั้งตั๋ว revision เก่า)
   // ==========================================
 
+  const validTomorrowIds = new Set(tomorrowTickets.map(function(t) { return String(t.ticketId); }));
   const prunedCount = await sheetsLib.pruneStaleRows(
-    sheets, spreadsheetId, sheetId, PLAN_SHEET_NAME, TICKET_ID_COL, new Set(subIds)
+    sheets, spreadsheetId, sheetId, PLAN_SHEET_NAME, TICKET_ID_COL, validTomorrowIds
   );
   if (prunedCount > 0) {
     console.log('ลบ ' + prunedCount + ' แถวที่ไม่มีนัดหมายพรุ่งนี้แล้ว');
   }
 
   // ==========================================
-  // 4. FETCH DETAIL + UPSERT
+  // 5. UPSERT
   // ==========================================
 
-  const detailResults = await rocket.mapConcurrent(subIds, SUB_CONCURRENCY, async function(subId) {
-    const html = await rocket.getTicketDetailHtml(subId, auth);
-    const ticket = rocket.parseTicketDetail(html, subId);
-    if (!ticket.ticketNo && !ticket.status) {
-      throw new Error('หน้าที่ได้ไม่ใช่ ticket detail จริง (parse ไม่สำเร็จ)');
-    }
-    return ticket;
-  });
-
   const lastSync = rocket.formatDateTimeBangkok(new Date());
-
-  const rows = [];
-  detailResults.forEach(function(r, i) {
-    if (r && r.__error) {
-      console.log('ERROR SubTicket ' + subIds[i] + ': ' + r.__error);
-    } else if (r) {
-      rows.push({ key: String(r.ticketId), row: planToRow(r, lastSync) });
-    }
+  const rows = tomorrowTickets.map(function(r) {
+    return { key: String(r.ticketId), row: planToRow(r, lastSync) };
   });
 
   const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, PLAN_SHEET_NAME, PLAN_HEADERS.concat(['Ticket ID']), TICKET_ID_COL);
   await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, PLAN_SHEET_NAME, PLAN_HEADERS.concat(['Ticket ID']), ctx, rows);
 
-  console.log('เขียนแล้ว ' + rows.length + '/' + subIds.length);
+  console.log('เขียนแล้ว ' + rows.length + '/' + tomorrowTickets.length);
   console.log('DONE');
 
 }

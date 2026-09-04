@@ -198,13 +198,13 @@ function computeLast3MonthsRangeBangkok() {
 
 // ใช้โดย sync-tomorrow-plan.js — start=end=วันพรุ่งนี้เสมอ
 // (ตามเวลากรุงเทพ) คู่กับ date_type=2 (วันที่นัดหมาย)
-function computeTomorrowRangeBangkok() {
+function computeTomorrowRangeBangkok(date = new Date()) {
 
-  function bangkokDateParts(date) {
+  function bangkokDateParts(d) {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Bangkok',
       year: 'numeric', month: '2-digit', day: '2-digit'
-    }).formatToParts(date);
+    }).formatToParts(d);
     const get = (t) => Number(parts.find(p => p.type === t).value);
     return { year: get('year'), month: get('month'), day: get('day') };
   }
@@ -215,11 +215,104 @@ function computeTomorrowRangeBangkok() {
     return dd + '/' + mm + '/' + year;
   }
 
-  const now = bangkokDateParts(new Date());
+  const now = bangkokDateParts(date);
   const tomorrow = new Date(now.year, now.month - 1, now.day + 1);
-  const tomorrowStr = fmt(tomorrow.getFullYear(), tomorrow.getMonth() + 1, tomorrow.getDate());
+  const tomorrowParts = {
+    year: tomorrow.getFullYear(),
+    month: tomorrow.getMonth() + 1,
+    day: tomorrow.getDate()
+  };
+  const tomorrowStr = fmt(tomorrowParts.year, tomorrowParts.month, tomorrowParts.day);
 
-  return { start: tomorrowStr, end: tomorrowStr };
+  return { start: tomorrowStr, end: tomorrowStr, dateParts: tomorrowParts };
+
+}
+
+
+
+const MONTH_NAME_TO_NUMBER = {
+  'jan': 1, 'january': 1, 'ม.ค.': 1, 'มค': 1, 'มกราคม': 1,
+  'feb': 2, 'february': 2, 'ก.พ.': 2, 'กพ': 2, 'กุมภาพันธ์': 2,
+  'mar': 3, 'march': 3, 'มี.ค.': 3, 'มีค': 3, 'มีนาคม': 3,
+  'apr': 4, 'april': 4, 'เม.ย.': 4, 'เมย': 4, 'เมษายน': 4,
+  'may': 5, 'พ.ค.': 5, 'พค': 5, 'พฤษภาคม': 5,
+  'jun': 6, 'june': 6, 'มิ.ย.': 6, 'มิย': 6, 'มิถุนายน': 6,
+  'jul': 7, 'july': 7, 'ก.ค.': 7, 'กค': 7, 'กรกฎาคม': 7,
+  'aug': 8, 'august': 8, 'ส.ค.': 8, 'สค': 8, 'สิงหาคม': 8,
+  'sep': 9, 'september': 9, 'sept': 9, 'ก.ย.': 9, 'กย': 9, 'กันยายน': 9,
+  'oct': 10, 'october': 10, 'ต.ค.': 10, 'ตค': 10, 'ตุลาคม': 10,
+  'nov': 11, 'november': 11, 'พ.ย.': 11, 'พย': 11, 'พฤศจิกายน': 11,
+  'dec': 12, 'december': 12, 'ธ.ค.': 12, 'ธค': 12, 'ธันวาคม': 12
+};
+
+
+
+function parseDateParts(dateStr) {
+
+  if (!dateStr || typeof dateStr !== 'string') {
+    return null;
+  }
+  const cleaned = dateStr.trim();
+
+  // 1. "04 Sep 2026 08:00", "24 Aug 2026 16:03", "4 ก.ย. 2569", "4 กันยายน 2026"
+  const textMonthMatch = cleaned.match(/(\d{1,2})\s+([A-Za-zก-๙.]+)\s+(\d{4})/i);
+  if (textMonthMatch) {
+    const day = parseInt(textMonthMatch[1], 10);
+    const monthRaw = textMonthMatch[2].toLowerCase().trim();
+    const monthKey = monthRaw.replace(/\./g, '');
+    const month = MONTH_NAME_TO_NUMBER[monthKey] || MONTH_NAME_TO_NUMBER[monthRaw];
+    let year = parseInt(textMonthMatch[3], 10);
+    if (year > 2400) {
+      year -= 543;
+    }
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year > 2000) {
+      return { year, month, day };
+    }
+  }
+
+  // 2. "04/09/2026", "4-9-2026" (DD/MM/YYYY or DD-MM-YYYY)
+  const dmyMatch = cleaned.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10);
+    let year = parseInt(dmyMatch[3], 10);
+    if (year > 2400) {
+      year -= 543;
+    }
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year > 2000) {
+      return { year, month, day };
+    }
+  }
+
+  // 3. "2026-09-04", "2026/09/04" (YYYY-MM-DD or YYYY/MM/DD)
+  const ymdMatch = cleaned.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  if (ymdMatch) {
+    let year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10);
+    const day = parseInt(ymdMatch[3], 10);
+    if (year > 2400) {
+      year -= 543;
+    }
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year > 2000) {
+      return { year, month, day };
+    }
+  }
+
+  return null;
+
+}
+
+
+
+function isMatchingDateParts(dateStr, targetParts) {
+
+  const parsed = parseDateParts(dateStr);
+  if (!parsed || !targetParts) {
+    return false;
+  }
+  return parsed.year === targetParts.year &&
+         parsed.month === targetParts.month &&
+         parsed.day === targetParts.day;
 
 }
 
@@ -671,6 +764,8 @@ module.exports = {
   mapConcurrent,
   computeLast3MonthsRangeBangkok,
   computeTomorrowRangeBangkok,
+  parseDateParts,
+  isMatchingDateParts,
   formatDateTimeBangkok,
   getParentTicketHtml,
   extractParentTicketIds,
