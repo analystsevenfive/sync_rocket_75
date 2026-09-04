@@ -29,19 +29,28 @@ const PARENT_CONCURRENCY = 30;
 const SUB_CONCURRENCY = 30;
 
 const PLAN_HEADERS = [
-  'Ticket No', 'Appointment', 'Customer', 'Branch', 'Contact', 'Phone',
-  'Problem Reported', 'Product Name', 'Technician', 'Team', 'Serial', 'URL', 'Last Sync'
+  'Ticket ID', 'Ticket No', 'Appointment', 'Customer', 'Branch', 'Contact',
+  'Problem Reported', 'Product Name', 'Technician', 'Phone', 'Team', 'Serial', 'URL', 'Last Sync'
 ];
-
-const TICKET_ID_COL = PLAN_HEADERS.length + 1; // เก็บ Ticket ID ไว้คอลัมน์ท้ายสุด ใช้เป็น key เท่านั้น ไม่โชว์ตรงๆ ให้ผู้ใช้
 
 
 
 function planToRow(d, lastSync) {
   return [
-    d.ticketNo, d.appointment, d.customer, d.branch, d.contact, d.phone,
-    d.problem, d.productName, d.technician, d.team || '', d.serial || '', d.url, lastSync,
-    d.ticketId
+    d.ticketId,
+    d.ticketNo,
+    d.appointment,
+    d.customer,
+    d.branch,
+    d.contact,
+    d.problem,
+    d.productName,
+    d.technician,
+    d.phone,
+    d.team || '',
+    d.serial || '',
+    d.url,
+    lastSync
   ];
 }
 
@@ -162,8 +171,7 @@ async function main() {
     return planToRow(r, lastSync);
   });
 
-  const fullHeaders = PLAN_HEADERS.concat(['Ticket ID']);
-  await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, PLAN_SHEET_NAME, fullHeaders, rows);
+  await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, PLAN_SHEET_NAME, PLAN_HEADERS, rows);
 
   console.log('เขียนแล้ว ' + rows.length + '/' + tomorrowTickets.length + ' (เรียงตามเวลานัดหมาย เช้า ➔ เย็น)');
   console.log('DONE');
