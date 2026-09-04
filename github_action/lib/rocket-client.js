@@ -532,7 +532,13 @@ function extractCheckRepairInfo(html) {
     const appointmentCell = cells[1] || '';
     const technicianCell = cells[2] || '';
 
-    const teamMatch = appointmentCell.match(/ทีม\s*:\s*([\s\S]*?)<br/i);
+    let team = '';
+    const teamMatch = appointmentCell.match(/ทีม\s*:\s*([^<\n]+)/i) ||
+                      appointmentCell.match(/ทีม\s*:\s*([\s\S]*?)<br/i) ||
+                      technicianCell.match(/ทีม\s*([A-Za-z0-9\s()]+)/i);
+    if (teamMatch) {
+      team = cleanText(teamMatch[1]);
+    }
 
     const technicians = technicianCell
       .split(/<br\s*\/?>/i)
@@ -549,7 +555,7 @@ function extractCheckRepairInfo(html) {
     const subInfo = {
       subId: subId,
       ticketNo: ticketNo,
-      team: teamMatch ? cleanText(teamMatch[1]) : '',
+      team: team,
       technicians: technicians.join(', ')
     };
 

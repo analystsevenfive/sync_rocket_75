@@ -30,17 +30,17 @@ const SUB_CONCURRENCY = 30;
 
 const PLAN_HEADERS = [
   'Ticket No', 'Appointment', 'Customer', 'Branch', 'Contact', 'Phone',
-  'Problem Reported', 'Product Name', 'Technician', 'URL', 'Last Sync'
+  'Problem Reported', 'Product Name', 'Technician', 'Team', 'Serial', 'URL', 'Last Sync'
 ];
 
-const TICKET_ID_COL = PLAN_HEADERS.length + 1; // เก็บ Ticket ID ไว้คอลัมน์ท้ายสุด ใช้เป็น upsert key เท่านั้น ไม่โชว์ตรงๆ ให้ผู้ใช้
+const TICKET_ID_COL = PLAN_HEADERS.length + 1; // เก็บ Ticket ID ไว้คอลัมน์ท้ายสุด ใช้เป็น key เท่านั้น ไม่โชว์ตรงๆ ให้ผู้ใช้
 
 
 
 function planToRow(d, lastSync) {
   return [
     d.ticketNo, d.appointment, d.customer, d.branch, d.contact, d.phone,
-    d.problem, d.productName, d.technician, d.url, lastSync,
+    d.problem, d.productName, d.technician, d.team || '', d.serial || '', d.url, lastSync,
     d.ticketId
   ];
 }
@@ -111,6 +111,7 @@ async function main() {
       }
       const info = infoMap[String(subId)] || {};
       ticket.technician = info.technicians || ticket.technician || '';
+      ticket.team = info.team || '';
       return ticket;
     });
 
