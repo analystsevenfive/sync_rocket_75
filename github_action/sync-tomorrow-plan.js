@@ -35,6 +35,14 @@ const PLAN_HEADERS = [
 
 
 
+function forceTextIfNumeric(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  const str = String(value).trim();
+  return /^\d+$/.test(str) ? "'" + str : str;
+}
+
 function planToRow(d, lastSync) {
   return [
     d.ticketId,
@@ -46,9 +54,9 @@ function planToRow(d, lastSync) {
     d.problem,
     d.productName,
     d.technician,
-    d.phone,
+    forceTextIfNumeric(d.phone),
     d.team || '',
-    d.serial || '',
+    forceTextIfNumeric(d.serial),
     d.url,
     lastSync
   ];
@@ -63,9 +71,9 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  // สำหรับทดสอบ: เปลี่ยนเป็นวันนี้ (computeTodayRangeBangkok)
-  const range = rocket.computeTodayRangeBangkok();
-  console.log('วันที่นัดหมาย (วันนี้ สำหรับ TEST): ' + range.start);
+  // แผนงานสำหรับวันพรุ่งนี้ (computeTomorrowRangeBangkok)
+  const range = rocket.computeTomorrowRangeBangkok();
+  console.log('วันที่นัดหมาย (วันพรุ่งนี้): ' + range.start);
 
   // ==========================================
   // 1. PARENT TICKETS ที่มีนัดหมายวันนี้ (date_type=2)
