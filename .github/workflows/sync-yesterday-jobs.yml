@@ -1,0 +1,35 @@
+name: Sync Yesterday Completed Jobs
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 07:00 เวลาไทย (UTC+7) = 00:00 UTC — วันละครั้ง
+    - cron: '0 0 * * *'
+
+concurrency:
+  group: sync-yesterday-jobs
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github_action
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run yesterday completed jobs sync
+        env:
+          ROCKET_USERNAME: ${{ secrets.ROCKET_USERNAME }}
+          ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: node sync-yesterday-jobs.js

@@ -262,6 +262,39 @@ function computeTodayRangeBangkok(date = new Date()) {
 
 
 
+// ใช้โดย sync-yesterday-jobs.js — start=end=เมื่อวานเสมอ (ตามเวลากรุงเทพ)
+function computeYesterdayRangeBangkok(date = new Date()) {
+
+  function bangkokDateParts(d) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Bangkok',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(d);
+    const get = (t) => Number(parts.find(p => p.type === t).value);
+    return { year: get('year'), month: get('month'), day: get('day') };
+  }
+
+  function fmt(year, month, day) {
+    const dd = String(day).padStart(2, '0');
+    const mm = String(month).padStart(2, '0');
+    return dd + '/' + mm + '/' + year;
+  }
+
+  const now = bangkokDateParts(date);
+  const yesterday = new Date(now.year, now.month - 1, now.day - 1);
+  const yesterdayParts = {
+    year: yesterday.getFullYear(),
+    month: yesterday.getMonth() + 1,
+    day: yesterday.getDate()
+  };
+  const yesterdayStr = fmt(yesterdayParts.year, yesterdayParts.month, yesterdayParts.day);
+
+  return { start: yesterdayStr, end: yesterdayStr, dateParts: yesterdayParts };
+
+}
+
+
+
 const MONTH_NAME_TO_NUMBER = {
   'jan': 1, 'january': 1, 'ม.ค.': 1, 'มค': 1, 'มกราคม': 1,
   'feb': 2, 'february': 2, 'ก.พ.': 2, 'กพ': 2, 'กุมภาพันธ์': 2,
@@ -853,6 +886,7 @@ module.exports = {
   computeLast3MonthsRangeBangkok,
   computeTomorrowRangeBangkok,
   computeTodayRangeBangkok,
+  computeYesterdayRangeBangkok,
   parseDateParts,
   isMatchingDateParts,
   parseAppointmentTimestamp,
