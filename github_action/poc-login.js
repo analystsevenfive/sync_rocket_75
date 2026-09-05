@@ -145,40 +145,35 @@ async function main() {
   const fnMatch = listPageHtml.match(/function\s+(\w+)\s*\([^)]*product_id[^)]*\)[\s\S]*?ajax\/ticket\/ModalProduct\.php/i);
   console.log('Function calling ModalProduct:', fnMatch ? fnMatch[0] : 'None');
 
-  // Search for the button or link that calls this function in tableHtml
-  const fnName = fnMatch ? fnMatch[1] : 'ModalProduct';
-  console.log('Searching for calls to:', fnName);
-  const callRegex = new RegExp(fnName + '\\s*\\(([^)]+)\\)', 'gi');
-  const callsInTable = tableHtml.match(callRegex) || [];
-  console.log('Calls in tableHtml:', callsInTable.slice(0, 5));
-
-  // Also check ticket_checkrepair_view.php or ticket_view.php for ModalProduct
-  const subId = '2267317011';
-  const subViewRes = await fetch(base + '/main/ticket_checkrepair_view.php?id=' + subId, {
-    headers: { Cookie: cookie }
-  });
-  const subViewHtml = await subViewRes.text();
-  const subCalls = subViewHtml.match(/ModalProduct[^\n"']*/gi) || [];
-  console.log('ModalProduct in subViewHtml:', subCalls);
-  const prodIdMatch = subViewHtml.match(/product_id["']?\s*[:=]\s*["']?(\d+)/i);
-  console.log('product_id match in subViewHtml:', prodIdMatch);
-
-  // Check parent ticket_view.php
-  const parentIdMatch = subViewHtml.match(/ticket_view\.php\?id=(\d+)/);
-  if (parentIdMatch) {
-    const parentId = parentIdMatch[1];
-    const parentViewRes = await fetch(base + '/main/ticket_view.php?id=' + parentId, {
-      headers: { Cookie: cookie }
-    });
-    const parentViewHtml = await parentViewRes.text();
-    const parentCalls = parentViewHtml.match(/ModalProduct[^\n"']*/gi) || [];
-    console.log('ModalProduct in parentViewHtml:', parentCalls);
-    const pProdIdMatch = parentViewHtml.match(/product_id["']?\s*[:=]\s*["']?(\d+)/i);
-    console.log('product_id match in parentViewHtml:', pProdIdMatch);
-    // search for buttons with modal in parentViewHtml
-    const anyModal = parentViewHtml.match(/onclick=["'][^"']*ModalProduct[^"']*["']/gi) || [];
-    console.log('anyModal in parentViewHtml:', anyModal);
+  // 1. Find a <tr> that has Modal_showPd
+  const trMatch = tableHtml.match(/<tr[^>]*>[\s\S]*?Modal_showPd\(['"](\d+)['"]\)[\s\S]*?<\/tr>/i);
+  if (trMatch) {
+    console.log('=== Table Row with Modal_showPd: ===');
+    console.log(trMatch[0].substring(0, 1000));
   }
+
+  // 2. Call ModalProduct.php with product_id = 9500128559
+  const testProdId = '9500128559';
+  console.log('=== Calling ModalProduct.php with product_id = ' + testProdId + ' ===');
+  const prodBody = new URLSearchParams();
+  prodBody.set('product_id', testProdId);
+  prodBody.set('token', data.token);
+  prodBody.set('key', data.key);
+
+  const prodRes = await fetch(base + '/main/ajax/ticket/ModalProduct.php', {
+    method: 'POST',
+    headers: {
+      Origin: base,
+      Referer: base + '/main/ticket_list.php',
+      'X-Requested-With': 'XMLHttpRequest',
+      Cookie: cookie
+    },
+    body: prodBody
+  });
+  console.log('ModalProduct status:', prodRes.status);
+  const prodHtml = await prodRes.text();
+  console.log('=== FULL ModalProduct HTML: ===');
+  console.log(prodHtml);
 
 }
 
