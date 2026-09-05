@@ -6,11 +6,8 @@ async function main() {
     headers: { Cookie: auth.cookie }
   });
   const html = await res.text();
-  // Find where customer or date or any info is displayed
-  const lines = html.split('\n')
-    .map(l => rocket.cleanText(l).trim())
-    .filter(l => l.length > 0 && l.length < 80);
-  console.log('Unique sample lines:', lines.slice(100, 220).join('\n'));
+  const matches = html.match(/ajax\/[^\s'"]+/gi) || [];
+  console.log('AJAX endpoints on ticket_view:', [...new Set(matches)]);
 }
 
 main().catch(err => {
