@@ -2,20 +2,18 @@ const rocket = require('./lib/rocket-client');
 
 async function main() {
   const auth = await rocket.rocketLogin();
-  console.log('LOGIN OK');
-
-  // Check ModalProduct for BKIN0826-000635 product id 2654458489
-  const pHtml = await rocket.getModalProductHtml('2654458489', auth);
-  console.log('ModalProduct 2654458489 length:', pHtml.length);
-
-  const labelRegex = /<label[^>]*>([\s\S]*?)<\/label>[\s\S]*?<input[^>]*value=["']([^"']*)["']/gi;
-  let m;
-  while ((m = labelRegex.exec(pHtml)) !== null) {
-    console.log('ModalProduct field:', rocket.cleanText(m[1]), '=>', rocket.cleanText(m[2]));
-  }
+  const res = await fetch('https://rocket75.com/main/ticket_view.php?id=7634722708', {
+    headers: { Cookie: auth.cookie }
+  });
+  const html = await res.text();
+  // Find where customer or date or any info is displayed
+  const lines = html.split('\n')
+    .map(l => rocket.cleanText(l).trim())
+    .filter(l => l.length > 0 && l.length < 80);
+  console.log('Unique sample lines:', lines.slice(100, 220).join('\n'));
 }
 
 main().catch(err => {
-  console.error('Error:', err);
+  console.error(err);
   process.exit(1);
 });
