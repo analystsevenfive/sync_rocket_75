@@ -423,6 +423,58 @@ function formatDateTimeBangkok(date) {
 
 
 
+// แปลงวันเวลา เช่น "18/08/2026 11:21" หรือ "04 Sep 2026 16:03" เป็น timestamp (ms)
+function parseDateTimeBangkok(str) {
+
+  if (!str || typeof str !== 'string') {
+    return null;
+  }
+  const cleaned = str.trim();
+  if (!cleaned || cleaned.includes('ยังไม่มีข้อมูล')) {
+    return null;
+  }
+
+  const timeMatch = cleaned.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  const hours = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+  const minutes = timeMatch ? parseInt(timeMatch[2], 10) : 0;
+  const seconds = timeMatch && timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+
+  const dateParts = parseDateParts(cleaned);
+  if (!dateParts) {
+    return null;
+  }
+
+  return new Date(dateParts.year, dateParts.month - 1, dateParts.day, hours, minutes, seconds).getTime();
+
+}
+
+
+
+// คำนวณระยะเวลาจาก reportDate ถึง endTime คืนค่าเป็น "ชั่วโมง.นาที" เช่น "61.45"
+function computeWorkingTime(reportDateStr, endTimeStr) {
+
+  const startMs = parseDateTimeBangkok(reportDateStr);
+  const endMs = parseDateTimeBangkok(endTimeStr);
+  if (!startMs || !endMs) {
+    return '';
+  }
+
+  const diffMs = endMs - startMs;
+  if (diffMs < 0) {
+    return '';
+  }
+
+  const totalMinutes = Math.floor(diffMs / (60 * 1000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return hours + '.' + String(minutes).padStart(2, '0');
+
+}
+
+
+
+
 /*************************************************
  * PARENT TICKETS (getTable.php)
  *************************************************/
@@ -1083,6 +1135,8 @@ module.exports = {
   isMatchingDateParts,
   parseAppointmentTimestamp,
   formatDateTimeBangkok,
+  parseDateTimeBangkok,
+  computeWorkingTime,
   getParentTicketHtml,
   extractParentTicketIds,
   extractParentToProductIdMap,
