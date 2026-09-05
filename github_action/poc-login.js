@@ -133,62 +133,28 @@ async function main() {
     body: tableBody
   });
 
+  console.log('POST getTable.php status:', tableRes.status);
+
   const tableHtml = await tableRes.text();
-  console.log('tableHtml length:', tableHtml.length);
+  console.log('getTable.php response length:', tableHtml.length);
 
-  const listPageRes = await fetch(base + '/main/ticket_list.php', {
-    headers: { Cookie: cookie }
-  });
-  const listPageHtml = await listPageRes.text();
+  const idMatches = tableHtml.match(/ticket_view\.php\?id=(\d+)/gi) || [];
+  const uniqueIds = new Set(idMatches);
 
-  // Test extractParentToProductIdMap
-  function extractParentToProductIdMap(html) {
-    const map = {};
-    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let match;
-    while ((match = rowRegex.exec(html)) !== null) {
-      const content = match[1];
-      const parentMatch = content.match(/ticket_view\.php\?id=(\d+)/i);
-      const prodMatch = content.match(/Modal_showPd\(['"](\d+)['"]\)/i);
-      if (parentMatch && prodMatch) {
-        map[parentMatch[1]] = prodMatch[1];
-      }
-    }
-    return map;
+  console.log('Parent ticket ID ที่เจอ:', uniqueIds.size);
+
+  if (uniqueIds.size > 0) {
+    console.log('AJAX ENDPOINT WORKS — พอร์ตทั้งระบบไป Node.js/GitHub Actions ได้จริง');
+  } else {
+    console.log('เจอ 0 parent ticket — เช็คช่วงวันที่ หรืออาจโดน block บางส่วน (ดู response ด้านบนประกอบ)');
+    process.exit(1);
   }
 
-  function parseSalesInvoiceNo(html) {
-    if (!html || typeof html !== 'string') return '';
-    const labelMatch = html.match(/<label[^>]*>\s*เลขที่บิลขาย\s*<\/label>[\s\S]*?<input\b([^>]*)>/i);
-    if (labelMatch) {
-      const valMatch = labelMatch[1].match(/\bvalue=["']([^"']*)["']/i);
-      return valMatch ? valMatch[1].trim() : '';
-    }
-    return '';
-  }
-
-  const prodMap = extractParentToProductIdMap(tableHtml);
-  console.log('Total parent tickets mapped to productId in tableHtml:', Object.keys(prodMap).length);
-  const sampleEntries = Object.entries(prodMap).slice(0, 5);
-  console.log('Sample parent->product mappings:', sampleEntries);
-
-  const rocket = require('./lib/rocket-client');
-  const subViewRes = await fetch(base + '/main/ticket_checkrepair_view.php?id=2267317011', {
-    headers: { Cookie: cookie }
-  });
-  const subViewHtml = await subViewRes.text();
-  console.log('=== Ticket 2267317011 fields ===');
-  console.log('reportDate:', rocket.getDtValue(subViewHtml, 'วันที่แจ้ง'));
-  console.log('endTime:', rocket.getH5Value(subViewHtml, 'เวลาเสร็จงาน'));
-  console.log('startTime:', rocket.getH5Value(subViewHtml, 'เวลาเข้างาน'));
-  console.log('duration:', rocket.getH5Value(subViewHtml, 'เวลาที่ใช้ (นาที)'));
-  console.log('appointment:', rocket.cleanText(rocket.extractBeforeLabel(subViewHtml, 'เวลานัดหมาย')));
 }
 
-
-
 main().catch(function(err) {
+
   console.error('PoC ล้มเหลว:', err);
   process.exit(1);
-});
 
+});

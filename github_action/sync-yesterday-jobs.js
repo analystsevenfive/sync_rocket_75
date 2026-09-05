@@ -27,6 +27,7 @@ const HEADERS = [
   'Report Date',
   'Appointment',
   'End Time',
+  'Working Time',
   'Inspection Status',
   'Sales Invoice No.',
   'Customer',
@@ -55,12 +56,14 @@ function forceTextIfNumeric(value) {
 
 
 function jobToRow(d, lastSync) {
+  const workingTime = d.workingTime || rocket.computeWorkingTime(d.reportDate, d.endTime);
   return [
     d.ticketId,
     d.ticketNo,
     d.reportDate || '',
     d.appointment,
     d.endTime || '',
+    workingTime ? "'" + workingTime : '',
     d.inspectionStatus || '',
     forceTextIfNumeric(d.salesInvoiceNo),
     d.customer,
@@ -87,17 +90,23 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const range = rocket.computeYesterdayRangeBangkok();
-  console.log('วันที่นัดหมาย (เมื่อวาน): ' + range.start);
+  // ชั่วคราว: กำหนดเป็นวันที่ 03/09/2026 ตามที่ระบุ
+  const range = {
+    start: '03/09/2026',
+    end: '03/09/2026',
+    dateParts: { year: 2026, month: 9, day: 3 }
+  };
+  console.log('วันที่นัดหมาย (ชั่วคราว): ' + range.start);
 
   // ==========================================
-  // 1. PARENT TICKETS ที่มีนัดหมายเมื่อวาน (date_type=2)
+  // 1. PARENT TICKETS ที่มีนัดหมาย (date_type=2)
   // ==========================================
 
   const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, DATE_TYPE_APPOINTMENT);
   const parentIds = rocket.extractParentTicketIds(parentHtml);
   const parentToProductMap = rocket.extractParentToProductIdMap(parentHtml);
   console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length + ' (แมป Product ID ได้: ' + Object.keys(parentToProductMap).length + ')');
+
 
   // ==========================================
   // 2. CANDIDATE SUB TICKETS + ช่าง/ทีม ต่อ parent

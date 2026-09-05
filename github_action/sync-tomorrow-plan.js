@@ -34,7 +34,6 @@ const PLAN_HEADERS = [
   'Report Date',
   'Appointment',
   'End Time',
-  'Working Time',
   'Inspection Status',
   'Customer',
   'Branch',
@@ -66,7 +65,6 @@ function planToRow(d, lastSync) {
     d.reportDate || '',
     d.appointment,
     d.endTime || '',
-    d.workingTime ? "'" + d.workingTime : '',
     d.inspectionStatus || '',
     d.customer,
     d.branch,
@@ -91,16 +89,12 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  // ชั่วคราว: กำหนดเป็นวันที่ 03/09/2026 ตามที่ระบุ
-  const range = {
-    start: '03/09/2026',
-    end: '03/09/2026',
-    dateParts: { year: 2026, month: 9, day: 3 }
-  };
-  console.log('วันที่นัดหมาย (ชั่วคราว): ' + range.start);
+  // แผนงานสำหรับวันพรุ่งนี้ (computeTomorrowRangeBangkok)
+  const range = rocket.computeTomorrowRangeBangkok();
+  console.log('วันที่นัดหมาย (วันพรุ่งนี้): ' + range.start);
 
   // ==========================================
-  // 1. PARENT TICKETS ที่มีนัดหมาย (date_type=2)
+  // 1. PARENT TICKETS ที่มีนัดหมายวันนี้ (date_type=2)
   // ==========================================
 
   const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, DATE_TYPE_APPOINTMENT);
@@ -138,7 +132,7 @@ async function main() {
   console.log('CANDIDATE SUB TICKETS ทั้งหมด: ' + candidateSubIds.length);
 
   // ==========================================
-  // 3. FETCH DETAIL + FILTER เฉพาะตั๋วที่นัดหมายตรงกับวันที่ระบุ
+  // 3. FETCH DETAIL + FILTER เฉพาะตั๋วที่นัดหมายตรงกับวันพรุ่งนี้จริงๆ
   // ==========================================
 
   let tomorrowTickets = [];
@@ -161,16 +155,15 @@ async function main() {
         console.log('ERROR SubTicket ' + candidateSubIds[i] + ': ' + r.__error);
       } else if (r) {
         if (rocket.isMatchingDateParts(r.appointment, range.dateParts)) {
-          r.workingTime = rocket.computeWorkingTime(r.reportDate, r.endTime);
           tomorrowTickets.push(r);
         } else {
-          console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (นัดหมาย: "' + (r.appointment || 'ไม่มี') + '" ไม่ใช่วันที่ค้นหา)');
+          console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (นัดหมาย: "' + (r.appointment || 'ไม่มี') + '" ไม่ใช่วันพรุ่งนี้)');
         }
       }
     });
   }
 
-  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันที่ค้นหาจริง: ' + tomorrowTickets.length);
+  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันพรุ่งนี้จริง: ' + tomorrowTickets.length);
 
   // ==========================================
   // 4. FETCH INSPECTION STATUS (ดูการตรวจงาน)
@@ -178,24 +171,23 @@ async function main() {
 
   if (tomorrowTickets.length > 0) {
     console.log('กำลังดึงสถานะการตรวจงาน (ModalView_inspector)...');
-    const subIdsToFetch = [...new Set(tomorrowTickets.map(function(t) {
-      return t.ticketId;
+    const parentIdsToFetch = [...new Set(tomorrowTickets.map(function(t) {
+      return t.parentTicketId || t.ticketId;
     }).filter(Boolean))];
 
     const inspectorMap = {};
-    await rocket.mapConcurrent(subIdsToFetch, 20, async function(subId) {
-      const modalHtml = await rocket.getInspectorModalHtml(subId, auth);
+    await rocket.mapConcurrent(parentIdsToFetch, 20, async function(parentId) {
+      const modalHtml = await rocket.getInspectorModalHtml(parentId, auth);
       const parsed = rocket.parseInspectorModal(modalHtml);
-      inspectorMap[String(subId)] = parsed;
+      inspectorMap[String(parentId)] = parsed;
     });
 
     tomorrowTickets.forEach(function(t) {
-      const sid = String(t.ticketId);
-      const insp = inspectorMap[sid] || {};
+      const pid = String(t.parentTicketId || t.ticketId);
+      const insp = inspectorMap[pid] || {};
       t.inspectionStatus = insp.status || '';
     });
   }
-
 
   // ==========================================
   // 5. SORT BY APPOINTMENT (จัดเรียงจากเช้า ไปเย็น)
