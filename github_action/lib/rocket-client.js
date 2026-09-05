@@ -484,7 +484,7 @@ function computeWorkingTime(reportDateStr, endTimeStr) {
 // "วันที่นัดหมาย" (ยืนยันจริงจาก DevTools ตอนเลือก dropdown
 // "ค้นหาจากวัน" บนหน้า ticket_list.php) — คนละ field วันที่
 // กันเลย ใช้โดย sync-tomorrow-plan.js
-async function getParentTicketHtml(auth, startDate, endDate, dateType, nameSearch) {
+async function getParentTicketHtml(auth, startDate, endDate, dateType, nameSearch, searchType) {
 
   const headers = {
     Origin: ROCKET_BASE,
@@ -505,7 +505,7 @@ async function getParentTicketHtml(auth, startDate, endDate, dateType, nameSearc
   body.set('search_staff', 'x');
   body.set('token', auth.token);
   body.set('key', auth.key);
-  body.set('search_type', 'x');
+  body.set('search_type', searchType || 'x');
   body.set('search_area', 'x');
   body.set('date_type', dateType || '1');
   body.set('search_warranty_type', 'x');
