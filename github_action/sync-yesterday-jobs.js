@@ -90,13 +90,8 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  // ชั่วคราว: กำหนดเป็นวันที่ 03/09/2026 ตามที่ระบุ
-  const range = {
-    start: '03/09/2026',
-    end: '03/09/2026',
-    dateParts: { year: 2026, month: 9, day: 3 }
-  };
-  console.log('วันที่นัดหมาย (ชั่วคราว): ' + range.start);
+  const range = rocket.computeYesterdayRangeBangkok();
+  console.log('วันที่นัดหมาย (เมื่อวาน): ' + range.start);
 
   // ==========================================
   // 1. PARENT TICKETS ที่มีนัดหมาย (date_type=2)
