@@ -20,9 +20,9 @@ async function main() {
     body: body
   });
   const html = await res.text();
-  const idx = html.indexOf('Activities');
+  const idx = html.indexOf('begin::Timeline');
   if (idx !== -1) {
-    console.log('Activities HTML:', html.substring(idx, idx + 2000));
+    console.log('Timeline HTML:', html.substring(idx, idx + 1500));
   }
 }
 
