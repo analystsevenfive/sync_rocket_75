@@ -140,19 +140,24 @@ async function main() {
   const viewHtml = await viewRes.text();
   console.log('viewHtml length:', viewHtml.length);
   
-  // Find ModalView_Inspector JS function definition
-  const secondIdx = viewHtml.indexOf('ModalView_Inspector(ticket_checkrepair_id)');
-  if (secondIdx !== -1) {
-    console.log('=== ModalView_Inspector JS Function: ===');
-    console.log(viewHtml.substring(secondIdx - 30, secondIdx + 500));
-  }
+  console.log('--- Calling ModalView_inspector with ticket_checkrepair_id = ' + subId + ' ---');
+  const b = new URLSearchParams();
+  b.set('ticket_checkrepair_id', subId);
 
-  // Find where ModalView_inspector.php is called in viewHtml
-  const phpIdx = viewHtml.indexOf('ModalView_inspector.php');
-  if (phpIdx !== -1) {
-    console.log('=== AJAX Call around ModalView_inspector.php: ===');
-    console.log(viewHtml.substring(phpIdx - 200, phpIdx + 300));
-  }
+  const mRes = await fetch(base + '/main/ajax/ticket_view/inspector/ModalView_inspector.php', {
+    method: 'POST',
+    headers: {
+      Origin: base,
+      Referer: base + '/main/ticket_checkrepair_view.php?id=' + subId,
+      'X-Requested-With': 'XMLHttpRequest',
+      Cookie: cookie
+    },
+    body: b
+  });
+  console.log('ModalView status:', mRes.status);
+  const mHtml = await mRes.text();
+  console.log('FULL MODAL HTML:');
+  console.log(mHtml);
 
 }
 
