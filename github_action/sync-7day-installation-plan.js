@@ -245,14 +245,8 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  // ชั่วคราว: กำหนดให้เริ่มจากวันที่ 31/08/2026 (31/8/2569) + 7 วัน (ถึง 07/09/2026)
-  const range = {
-    start: '31/08/2026',
-    end: '07/09/2026',
-    startDateObj: new Date(2026, 7, 31, 0, 0, 0),
-    endDateObj: new Date(2026, 8, 7, 23, 59, 59)
-  };
-  console.log(`ช่วงวันที่นัดหมาย (ชั่วคราว เริ่มจาก 31/8/2569 + 7 วัน): ${range.start} ถึง ${range.end}`);
+  const range = compute7DayPlanRangeBangkok();
+  console.log(`ช่วงวันที่นัดหมาย (วันนี้ + 7 วัน): ${range.start} ถึง ${range.end}`);
 
   // ==========================================
   // 1. ค้นหาตั๋วงานติดตั้ง (search_type=3, date_type=2)
