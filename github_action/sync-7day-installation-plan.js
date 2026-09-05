@@ -397,7 +397,7 @@ async function main() {
   const sheets = await sheetsLib.getSheetsClient();
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, SHEET_NAME);
 
-  const lastSync = rocket.formatLastSyncBangkok();
+  const lastSync = rocket.formatDateTimeBangkok(new Date());
   const rows = planItems.map(function(item) {
     return itemToRow(item, lastSync);
   });
