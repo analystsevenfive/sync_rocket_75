@@ -143,11 +143,52 @@ async function main() {
 
   console.log('Parent ticket ID ที่เจอ:', uniqueIds.size);
 
-  if (uniqueIds.size > 0) {
-    console.log('AJAX ENDPOINT WORKS — พอร์ตทั้งระบบไป Node.js/GitHub Actions ได้จริง');
-  } else {
-    console.log('เจอ 0 parent ticket — เช็คช่วงวันที่ หรืออาจโดน block บางส่วน (ดู response ด้านบนประกอบ)');
-    process.exit(1);
+  console.log('--- DIAGNOSTIC FOR TICKET 7634722708 ---');
+  const tvRes = await fetch(base + '/main/ticket_view.php?id=7634722708', {
+    headers: { Cookie: cookie }
+  });
+  const tvHtml = await tvRes.text();
+  console.log('ticket_view.php status:', tvRes.status, 'length:', tvHtml.length);
+
+  const dtMatches = tvHtml.match(/<dt[^>]*>[\s\S]*?<\/dt>[\s\S]*?<dd[^>]*>[\s\S]*?<\/dd>/gi) || [];
+  console.log('Found DT/DD count:', dtMatches.length);
+  dtMatches.forEach(m => {
+    if (m.includes('ที่อยู่') || m.includes('สาขา') || m.includes('ลูกค้า') || m.includes('Location')) {
+      console.log('DT/DD match:', m.replace(/\s+/g, ' '));
+    }
+  });
+
+  const crRes = await fetch(base + '/main/ajax/ticket_view/checkrepair.php', {
+    method: 'POST',
+    headers: {
+      Origin: base,
+      Referer: base + '/main/ticket_view.php?id=7634722708',
+      'X-Requested-With': 'XMLHttpRequest',
+      Cookie: cookie
+    },
+    body: new URLSearchParams({
+      id: '7634722708',
+      ticket_id: '7634722708',
+      token: token,
+      key: key
+    })
+  });
+  const crHtml = await crRes.text();
+  console.log('checkrepair.php length:', crHtml.length);
+  const subMatches = crHtml.match(/ticket_checkrepair_view\.php\?id=(\d+)/i);
+  if (subMatches) {
+    const subId = subMatches[1];
+    console.log('Sub ticket ID:', subId);
+    const subRes = await fetch(base + '/main/ticket_checkrepair_view.php?id=' + subId, {
+      headers: { Cookie: cookie }
+    });
+    const subHtml = await subRes.text();
+    const subDtMatches = subHtml.match(/<dt[^>]*>[\s\S]*?<\/dt>[\s\S]*?<dd[^>]*>[\s\S]*?<\/dd>/gi) || [];
+    subDtMatches.forEach(m => {
+      if (m.includes('ที่อยู่') || m.includes('สาขา')) {
+        console.log('Sub DT/DD match:', m.replace(/\s+/g, ' '));
+      }
+    });
   }
 
 }
