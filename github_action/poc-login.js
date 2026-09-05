@@ -2,39 +2,18 @@ const rocket = require('./lib/rocket-client');
 
 async function main() {
   const auth = await rocket.rocketLogin();
-  const parentId = '0115227884'; // BKIN0826-000757
+  console.log('LOGIN OK');
 
-  const tabs = [
-    'callcenter.php',
-    'administration.php',
-    'quotation.php',
-    'back_quotation.php',
-    'daily_work.php',
-    'finance.php',
-    'manager.php'
-  ];
-
-  for (const tab of tabs) {
-    const body = new URLSearchParams();
-    body.set('ticket_id', parentId);
-    body.set('token', auth.token);
-    body.set('key', auth.key);
-
-    const res = await fetch(`https://rocket75.com/main/ajax/ticket_view/${tab}`, {
-      method: 'POST',
-      headers: {
-        Origin: 'https://rocket75.com',
-        Referer: 'https://rocket75.com/main/ticket_view.php?id=' + parentId,
-        'X-Requested-With': 'XMLHttpRequest',
-        Cookie: auth.cookie
-      },
-      body: body
-    });
-    const html = await res.text();
-    console.log(`Tab ${tab}: len=${html.length}, has แววดาว?=${html.includes('แววดาว')}`);
-    if (html.includes('แววดาว')) {
-      const idx = html.indexOf('แววดาว');
-      console.log(`Context in ${tab}:`, html.substring(Math.max(0, idx - 150), idx + 150));
+  // Search name_search = 'แววดาว'
+  const html = await rocket.getParentTicketHtml(auth, '01/08/2026', '12/09/2026', '1', 'แววดาว');
+  console.log('Search "แววดาว" table length:', html.length);
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  let count = 0;
+  while ((m = rowRegex.exec(html)) !== null) {
+    if (m[1].includes('ticket_view.php')) {
+      count++;
+      console.log('Row ' + count + ':', rocket.cleanText(m[1]).substring(0, 300));
     }
   }
 }
