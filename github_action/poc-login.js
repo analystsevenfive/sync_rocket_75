@@ -144,10 +144,33 @@ async function main() {
   console.log('Parent ticket ID ที่เจอ:', uniqueIds.size);
 
   if (uniqueIds.size > 0) {
-    console.log('AJAX ENDPOINT WORKS — พอร์ตทั้งระบบไป Node.js/GitHub Actions ได้จริง');
-  } else {
-    console.log('เจอ 0 parent ticket — เช็คช่วงวันที่ หรืออาจโดน block บางส่วน (ดู response ด้านบนประกอบ)');
-    process.exit(1);
+    const firstIdMatch = Array.from(uniqueIds)[0].match(/id=(\d+)/);
+    const parentId = firstIdMatch ? firstIdMatch[1] : null;
+    console.log('Testing ModalView_inspector with parentId:', parentId);
+
+    const modalBody = new URLSearchParams();
+    modalBody.set('id', String(parentId));
+    modalBody.set('ticket_id', String(parentId));
+    modalBody.set('token', data.token);
+    modalBody.set('key', data.key);
+
+    const modalHeaders = {
+      Origin: base,
+      Referer: base + '/main/ticket_view.php?id=' + parentId,
+      'X-Requested-With': 'XMLHttpRequest'
+    };
+    if (cookie) modalHeaders.Cookie = cookie;
+
+    const modalRes = await fetch(base + '/main/ajax/ticket_view/inspector/ModalView_inspector.php', {
+      method: 'POST',
+      headers: modalHeaders,
+      body: modalBody
+    });
+
+    console.log('ModalView_inspector status:', modalRes.status);
+    const modalHtml = await modalRes.text();
+    console.log('Modal HTML:');
+    console.log(modalHtml);
   }
 
 }
