@@ -139,44 +139,70 @@ async function main() {
   console.log('getTable.php response length:', tableHtml.length);
 
   const rocket = require('./lib/rocket-client');
-  const subViewRes = await fetch(base + '/main/ticket_checkrepair_view.php?id=2267317011', {
-    headers: { Cookie: cookie }
+  // Search for BKIN0826-000635
+  const searchBody = new URLSearchParams();
+  searchBody.set('status', '');
+  searchBody.set('start_date', '01/08/2026');
+  searchBody.set('end_date', '05/09/2026');
+  searchBody.set('search_checkrepair', 'x');
+  searchBody.set('name_search', 'BKIN0826-000635');
+  searchBody.set('search_team', 'x');
+  searchBody.set('search_staff', 'x');
+  searchBody.set('token', data.token);
+  searchBody.set('key', data.key);
+  searchBody.set('search_type', 'x');
+  searchBody.set('search_area', 'x');
+  searchBody.set('date_type', '1');
+  searchBody.set('search_warranty_type', 'x');
+
+  const sRes = await fetch(base + '/main/ajax/ticket/getTable.php', {
+    method: 'POST',
+    headers: {
+      Origin: base,
+      Referer: base + '/main/ticket_list.php',
+      'X-Requested-With': 'XMLHttpRequest',
+      Cookie: cookie
+    },
+    body: searchBody
   });
-  const subViewHtml = await subViewRes.text();
-
-  function extractAllDtLabels(html) {
-    const labels = [];
-    const re = /<dt[^>]*>([\s\S]*?)<\/dt>[\s\S]*?<dd[^>]*>([\s\S]*?)<\/dd>/gi;
-    let m;
-    while ((m = re.exec(html)) !== null) {
-      labels.push({ label: rocket.cleanText(m[1]), value: rocket.cleanText(m[2]) });
+  const sHtml = await sRes.text();
+  console.log('Search getTable length:', sHtml.length);
+  const pMatch = sHtml.match(/ticket_view\.php\?id=(\d+)/i);
+  console.log('Parent ID match:', pMatch ? pMatch[1] : 'None');
+  if (pMatch) {
+    const parentId = pMatch[1];
+    // get checkrepair sub-tickets
+    const crHtml = await rocket.getCheckRepairHtml(parentId, { cookie, token: data.token, key: data.key });
+    const subIds = rocket.extractCheckRepairIds(crHtml);
+    console.log('Sub IDs:', subIds);
+    if (subIds.length > 0) {
+      const subHtml = await rocket.getTicketDetailHtml(subIds[0], { cookie });
+      console.log('=== SubTicket detail HTML snippet ===');
+      // dump all text and dt/dd
+      const re = /<dt[^>]*>([\s\S]*?)<\/dt>[\s\S]*?<dd[^>]*>([\s\S]*?)<\/dd>/gi;
+      let m;
+      while ((m = re.exec(subHtml)) !== null) {
+        console.log('DT:', rocket.cleanText(m[1]), '->', rocket.cleanText(m[2]));
+      }
+      // check any other blocks
+      const h5re = /<h5[^>]*>([\s\S]*?)<\/h5>[\s\S]*?<(?:label|div)[^>]*>([\s\S]*?)<\/(?:label|div)>/gi;
+      while ((m = h5re.exec(subHtml)) !== null) {
+        console.log('H5:', rocket.cleanText(m[1]), '->', rocket.cleanText(m[2]));
+      }
     }
-    return labels;
-  }
-
-  console.log('=== SubTicket 2267317011 DT labels: ===');
-  console.log(JSON.stringify(extractAllDtLabels(subViewHtml), null, 2));
-
-  const parentIdMatch = subViewHtml.match(/ticket_view\.php\?id=(\d+)/i);
-  if (parentIdMatch) {
-    const parentViewRes = await fetch(base + '/main/ticket_view.php?id=' + parentIdMatch[1], {
-      headers: { Cookie: cookie }
-    });
-    const parentViewHtml = await parentViewRes.text();
-    console.log('=== Parent Ticket ' + parentIdMatch[1] + ' DT labels: ===');
-    console.log(JSON.stringify(extractAllDtLabels(parentViewHtml), null, 2));
-  }
-
-  const idMatches = tableHtml.match(/ticket_view\.php\?id=(\d+)/gi) || [];
-  const uniqueIds = new Set(idMatches);
-
-  console.log('Parent ticket ID ที่เจอ:', uniqueIds.size);
-
-  if (uniqueIds.size > 0) {
-    console.log('AJAX ENDPOINT WORKS — พอร์ตทั้งระบบไป Node.js/GitHub Actions ได้จริง');
-  } else {
-    console.log('เจอ 0 parent ticket — เช็คช่วงวันที่ หรืออาจโดน block บางส่วน (ดู response ด้านบนประกอบ)');
-    process.exit(1);
+    // Also check parent ticket_view.php HTML
+    const parentRes = await fetch(base + '/main/ticket_view.php?id=' + parentId, { headers: { Cookie: cookie } });
+    const parentHtml = await parentRes.text();
+    console.log('=== Parent ticket_view HTML snippet ===');
+    const pDtre = /<dt[^>]*>([\s\S]*?)<\/dt>[\s\S]*?<dd[^>]*>([\s\S]*?)<\/dd>/gi;
+    let pm;
+    while ((pm = pDtre.exec(parentHtml)) !== null) {
+      console.log('Parent DT:', rocket.cleanText(pm[1]), '->', rocket.cleanText(pm[2]));
+    }
+    // check table row in getTable
+    console.log('=== Row in getTable ===');
+    const trm = sHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/i);
+    if (trm) console.log(trm[0].substring(0, 1500));
   }
 
 }
