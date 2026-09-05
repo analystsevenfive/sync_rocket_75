@@ -143,48 +143,12 @@ async function main() {
 
   console.log('Parent ticket ID ที่เจอ:', uniqueIds.size);
 
-  console.log('--- DIAGNOSTIC FOR TICKET 7634722708 ---');
-  const tvRes = await fetch(base + '/main/ticket_view.php?id=7634722708', {
-    headers: { Cookie: cookie }
-  });
-  const tvHtml = await tvRes.text();
-  console.log('ticket_view.php status:', tvRes.status, 'length:', tvHtml.length);
-
-  console.log('--- FETCHING overview.php FOR 7634722708 ---');
-  const ovRes = await fetch(base + '/main/ajax/ticket_view/overview.php', {
-    method: 'POST',
-    headers: {
-      Origin: base,
-      Referer: base + '/main/ticket_view.php?id=7634722708',
-      'X-Requested-With': 'XMLHttpRequest',
-      Cookie: cookie
-    },
-    body: new URLSearchParams({
-      ticket_id: '7634722708',
-      id: '7634722708'
-    })
-  });
-  console.log('overview.php status:', ovRes.status);
-  const ovHtml = await ovRes.text();
-  console.log('overview.php length:', ovHtml.length);
-  function cleanText(text) {
-    if (!text) return '';
-    return String(text).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  if (uniqueIds.size > 0) {
+    console.log('AJAX ENDPOINT WORKS — พอร์ตทั้งระบบไป Node.js/GitHub Actions ได้จริง');
+  } else {
+    console.log('เจอ 0 parent ticket — เช็คช่วงวันที่ หรืออาจโดน block บางส่วน (ดู response ด้านบนประกอบ)');
+    process.exit(1);
   }
-  function getDtValue(html, label) {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp('<dt[^>]*>\\s*' + escaped + '\\s*:?\\s*<\\/dt>[\\s\\S]*?<dd[^>]*>([\\s\\S]*?)<\\/dd>', 'i');
-    const m = html.match(regex);
-    return m ? cleanText(m[1]) : '';
-  }
-
-  console.log('PARSED OVERVIEW FOR 7634722708:');
-  console.log('ที่อยู่สาขา (Location):', getDtValue(ovHtml, 'ที่อยู่สาขา'));
-  console.log('สาขา (Branch):', getDtValue(ovHtml, 'สาขา'));
-  console.log('ลูกค้า (Customer):', getDtValue(ovHtml, 'ลูกค้า'));
-  console.log('ประเภท (Type):', getDtValue(ovHtml, 'ประเภท'));
-  console.log('ชื่อรุ่น (Product):', getDtValue(ovHtml, 'ชื่อรุ่น'));
-  console.log('อาการเสีย (Problem):', getDtValue(ovHtml, 'อาการเสีย'));
 
 }
 

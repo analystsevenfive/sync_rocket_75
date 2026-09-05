@@ -272,9 +272,13 @@ async function main() {
 
   // ==========================================
   // 2. ค้นหา SUB TICKETS จาก checkrepair.php ของแต่ละ parent
+  //    และดึง OVERVIEW (ภาพรวม) เพื่อเอา "ที่อยู่สาขา" (Location)
   // ==========================================
   let candidateSubTickets = [];
+  const overviewMap = {};
+
   if (parentIds.length > 0) {
+    // 2.1 ดึง Sub tickets
     const checkRepairResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
       const html = await rocket.getCheckRepairHtml(parentId, auth);
       const ids = rocket.extractCheckRepairIds(html);
@@ -292,6 +296,22 @@ async function main() {
             parentId: r.parentId
           });
         });
+      }
+    });
+
+    // 2.2 ดึง Overview ภาพรวมสำหรับ Location (ที่อยู่สาขา)
+    console.log(`กำลังดึงข้อมูล Location (ที่อยู่สาขา) จากหน้าภาพรวม ticket_view (${parentIds.length} ใบงาน)...`);
+    const overviewResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
+      const html = await rocket.getOverviewHtml(parentId, auth);
+      return {
+        parentId: parentId,
+        data: rocket.parseOverviewHtml(html)
+      };
+    });
+
+    overviewResults.forEach(function(r) {
+      if (r && !r.__error && r.data) {
+        overviewMap[r.parentId] = r.data;
       }
     });
   }
@@ -316,6 +336,7 @@ async function main() {
       if (!r || r.__error) return;
 
       const parentMeta = parentMap[r.parentId] || {};
+      const ov = overviewMap[r.parentId] || {};
       const parsedAppt = parseAppointment(r.appointment);
 
       // ตรวจสอบว่าวันนัดหมายอยู่ในช่วง [วันนี้, วันนี้ + 7 วัน] หรือไม่
@@ -327,24 +348,27 @@ async function main() {
       if (inRange) {
         processedParentIds.add(r.parentId);
 
-        const note = r.causeFound || r.customerSymptom || r.repairNote || r.problem || r.note || r.workDescription || '';
-        const location = r.machineLocation || parentMeta.location || '';
-        const productDesc = r.productName || parentMeta.model || '';
+        const note = r.causeFound || r.customerSymptom || r.repairNote || r.problem || r.note || r.workDescription || ov.problem || ov.note || '';
+        const location = ov.branchAddress || r.machineLocation || parentMeta.location || '';
+        const productDesc = r.productName || ov.productName || parentMeta.model || '';
+        const type = r.powerType || ov.powerType || '';
+        const customer = r.customer || ov.customer || parentMeta.customer || '';
+        const branch = r.branch || ov.branch || parentMeta.branch || '';
 
         planItems.push({
           ticketNo: r.ticketNo || parentMeta.ticketNo || '',
           salesperson: parentMeta.salesperson || '',
-          reportDate: r.reportDate || parentMeta.reportDate || '',
+          reportDate: r.reportDate || ov.reportDate || parentMeta.reportDate || '',
           appointmentDate: parsedAppt.dateStr,
           appointmentTime: parsedAppt.timeStr,
           timestamp: parsedAppt.timestamp,
           brand: parentMeta.brand || '',
           model: parentMeta.model || '',
           productDescription: productDesc,
-          customer: r.customer || parentMeta.customer || '',
-          branch: r.branch || parentMeta.branch || '',
+          customer: customer,
+          branch: branch,
           location: location,
-          type: r.powerType || '',
+          type: type,
           note: note,
           url: r.url || (parentMeta.parentId ? `https://rocket75.com/main/ticket_view.php?id=${parentMeta.parentId}` : '')
         });
@@ -356,22 +380,23 @@ async function main() {
   parentIds.forEach(function(pId) {
     if (!processedParentIds.has(pId)) {
       const p = parentMap[pId];
+      const ov = overviewMap[pId] || {};
       if (p) {
         planItems.push({
           ticketNo: p.ticketNo || '',
           salesperson: p.salesperson || '',
-          reportDate: p.reportDate || '',
+          reportDate: p.reportDate || ov.reportDate || '',
           appointmentDate: '',
           appointmentTime: '',
           timestamp: 0,
           brand: p.brand || '',
           model: p.model || '',
-          productDescription: p.model || '',
-          customer: p.customer || '',
-          branch: p.branch || '',
-          location: '',
-          type: '',
-          note: '',
+          productDescription: ov.productName || p.model || '',
+          customer: ov.customer || p.customer || '',
+          branch: ov.branch || p.branch || '',
+          location: ov.branchAddress || '',
+          type: ov.powerType || '',
+          note: ov.problem || ov.note || '',
           url: `https://rocket75.com/main/ticket_view.php?id=${pId}`
         });
       }
@@ -392,7 +417,7 @@ async function main() {
 
   console.log(`รายการติดตั้งทั้งหมดที่จะบันทึก: ${planItems.length}`);
   planItems.forEach(p => {
-    console.log(`- ${p.ticketNo}: นัด ${p.appointmentDate || '-'} ${p.appointmentTime || '-'} | ${p.customer} | ${p.brand} ${p.model}`);
+    console.log(`- ${p.ticketNo}: นัด ${p.appointmentDate || '-'} ${p.appointmentTime || '-'} | Loc: ${p.location || '-'} | ${p.customer}`);
   });
 
   // ==========================================

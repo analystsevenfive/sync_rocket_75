@@ -805,6 +805,71 @@ async function getParentPageHtml(parentId, auth) {
 
 
 /*************************************************
+ * OVERVIEW TAB (ajax/ticket_view/overview.php)
+ * ใช้ดึง "ที่อยู่สาขา" (Location), ประเภท, ลูกค้า ฯลฯ
+ *************************************************/
+
+async function getOverviewHtml(parentId, auth) {
+
+  const headers = {
+    Origin: ROCKET_BASE,
+    Referer: ROCKET_BASE + '/main/ticket_view.php?id=' + parentId,
+    'X-Requested-With': 'XMLHttpRequest'
+  };
+  if (auth.cookie) {
+    headers.Cookie = auth.cookie;
+  }
+
+  const body = new URLSearchParams();
+  body.set('id', String(parentId));
+  body.set('ticket_id', String(parentId));
+  if (auth.token) body.set('token', auth.token);
+  if (auth.key) body.set('key', auth.key);
+
+  const res = await fetchWithTimeout(ROCKET_BASE + '/main/ajax/ticket_view/overview.php', {
+    method: 'POST',
+    headers: headers,
+    body: body
+  });
+
+  if (res.status !== 200) {
+    throw new Error('overview.php HTTP ' + res.status);
+  }
+
+  return res.text();
+
+}
+
+
+
+function parseOverviewHtml(html) {
+
+  if (!html) return {};
+
+  return {
+    reportDate: getDtValue(html, 'วันที่แจ้ง'),
+    customer: getDtValue(html, 'ลูกค้า'),
+    branch: getDtValue(html, 'สาขา'),
+    branchAddress: getDtValue(html, 'ที่อยู่สาขา'),
+    contact: getDtValue(html, 'ผู้ติดต่อ'),
+    phone: getDtValue(html, 'เบอร์โทร'),
+    customerType: getDtValue(html, 'ประเภทลูกค้า'),
+    problem: getDtValue(html, 'อาการเสีย'),
+    workDescription: getDtValue(html, 'คำอธิบายงาน'),
+    specialCondition: getDtValue(html, 'เงื่อนไข/อุปกรณ์พิเศษ'),
+    note: getDtValue(html, 'หมายเหตุ'),
+    productCode: getDtValue(html, 'รหัสรุ่น'),
+    productName: getDtValue(html, 'ชื่อรุ่น'),
+    powerType: getDtValue(html, 'ประเภท'),
+    serial: getDtValue(html, 'Serial'),
+    warranty: getDtValue(html, 'ประกัน')
+  };
+
+}
+
+
+
+/*************************************************
  * INSPECTOR MODAL (ModalView_inspector.php)
  *************************************************/
 
@@ -1146,6 +1211,8 @@ module.exports = {
   getTicketDetailHtml,
   parseTicketDetail,
   getParentPageHtml,
+  getOverviewHtml,
+  parseOverviewHtml,
   getInspectorModalHtml,
   parseInspectorModal,
   getModalProductHtml,
