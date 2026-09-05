@@ -150,16 +150,30 @@ async function main() {
   const tvHtml = await tvRes.text();
   console.log('ticket_view.php status:', tvRes.status, 'length:', tvHtml.length);
 
-  const ajaxMatches = tvHtml.match(/ajax\/[a-zA-Z0-9_/.-]+\.php/gi) || [];
-  console.log('ALL AJAX ENDPOINTS IN ticket_view.php:', [...new Set(ajaxMatches)]);
-
-  const scriptMatches = tvHtml.match(/<script[\s\S]*?<\/script>/gi) || [];
-  console.log('Script count:', scriptMatches.length);
-  scriptMatches.forEach((s, idx) => {
-    if (s.includes('ajax') || s.includes('load') || s.includes('ticket')) {
-      console.log(`Script ${idx} sample:`, s.substring(0, 300).replace(/\s+/g, ' '));
-    }
+  console.log('--- FETCHING overview.php FOR 7634722708 ---');
+  const ovRes = await fetch(base + '/main/ajax/ticket_view/overview.php', {
+    method: 'POST',
+    headers: {
+      Origin: base,
+      Referer: base + '/main/ticket_view.php?id=7634722708',
+      'X-Requested-With': 'XMLHttpRequest',
+      Cookie: cookie
+    },
+    body: new URLSearchParams({
+      ticket_id: '7634722708',
+      id: '7634722708'
+    })
   });
+  console.log('overview.php status:', ovRes.status);
+  const ovHtml = await ovRes.text();
+  console.log('overview.php length:', ovHtml.length);
+  const idx = ovHtml.indexOf('ที่อยู่สาขา');
+  console.log('ที่อยู่สาขา in overview.php index:', idx);
+  if (idx !== -1) {
+    console.log(ovHtml.substring(Math.max(0, idx - 100), Math.min(ovHtml.length, idx + 300)));
+  } else {
+    console.log('Sample overview HTML:', ovHtml.substring(0, 1000));
+  }
 
 }
 
