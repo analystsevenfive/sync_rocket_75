@@ -167,13 +167,24 @@ async function main() {
   console.log('overview.php status:', ovRes.status);
   const ovHtml = await ovRes.text();
   console.log('overview.php length:', ovHtml.length);
-  const idx = ovHtml.indexOf('ที่อยู่สาขา');
-  console.log('ที่อยู่สาขา in overview.php index:', idx);
-  if (idx !== -1) {
-    console.log(ovHtml.substring(Math.max(0, idx - 100), Math.min(ovHtml.length, idx + 300)));
-  } else {
-    console.log('Sample overview HTML:', ovHtml.substring(0, 1000));
+  function cleanText(text) {
+    if (!text) return '';
+    return String(text).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   }
+  function getDtValue(html, label) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp('<dt[^>]*>\\s*' + escaped + '\\s*:?\\s*<\\/dt>[\\s\\S]*?<dd[^>]*>([\\s\\S]*?)<\\/dd>', 'i');
+    const m = html.match(regex);
+    return m ? cleanText(m[1]) : '';
+  }
+
+  console.log('PARSED OVERVIEW FOR 7634722708:');
+  console.log('ที่อยู่สาขา (Location):', getDtValue(ovHtml, 'ที่อยู่สาขา'));
+  console.log('สาขา (Branch):', getDtValue(ovHtml, 'สาขา'));
+  console.log('ลูกค้า (Customer):', getDtValue(ovHtml, 'ลูกค้า'));
+  console.log('ประเภท (Type):', getDtValue(ovHtml, 'ประเภท'));
+  console.log('ชื่อรุ่น (Product):', getDtValue(ovHtml, 'ชื่อรุ่น'));
+  console.log('อาการเสีย (Problem):', getDtValue(ovHtml, 'อาการเสีย'));
 
 }
 
