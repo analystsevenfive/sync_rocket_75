@@ -140,16 +140,12 @@ async function main() {
   const viewHtml = await viewRes.text();
   console.log('viewHtml length:', viewHtml.length);
   
-  // Search for inspector or modal in viewHtml
-  const inspectorMatches = viewHtml.match(/ModalView_inspector[^\n]*/gi) || [];
-  console.log('Inspector mentions in page:', inspectorMatches);
-
-  // Search for function or button that opens inspector
-  const btnMatches = viewHtml.match(/<button[^>]*>[^<]*ตรวจงาน[^<]*<\/button>/gi) || [];
-  console.log('Button mentions:', btnMatches);
-
-  const onclickMatches = viewHtml.match(/onclick=["'][^"']*inspector[^"']*["']/gi) || [];
-  console.log('Onclick matches:', onclickMatches);
+  const fnIdx = viewHtml.indexOf('ModalView_Inspector');
+  if (fnIdx !== -1) {
+    const fnStart = viewHtml.indexOf('function', Math.max(0, fnIdx - 50));
+    console.log('Function definition:');
+    console.log(viewHtml.substring(fnIdx - 30, fnIdx + 500));
+  }
 
   // --- Step B: Test ModalView_inspector.php with subId vs parentId ---
   console.log('--- Step B: Calling ModalView_inspector.php with subId ' + subId + ' ---');
