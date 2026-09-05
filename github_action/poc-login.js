@@ -140,41 +140,18 @@ async function main() {
   const viewHtml = await viewRes.text();
   console.log('viewHtml length:', viewHtml.length);
   
-  const fnIdx = viewHtml.indexOf('ModalView_Inspector');
-  if (fnIdx !== -1) {
-    const fnStart = viewHtml.indexOf('function', Math.max(0, fnIdx - 50));
-    console.log('Function definition:');
-    console.log(viewHtml.substring(fnIdx - 30, fnIdx + 500));
+  // Find ModalView_Inspector JS function definition
+  const secondIdx = viewHtml.indexOf('ModalView_Inspector(ticket_checkrepair_id)');
+  if (secondIdx !== -1) {
+    console.log('=== ModalView_Inspector JS Function: ===');
+    console.log(viewHtml.substring(secondIdx - 30, secondIdx + 500));
   }
 
-  // --- Step B: Test ModalView_inspector.php with subId vs parentId ---
-  console.log('--- Step B: Calling ModalView_inspector.php with subId ' + subId + ' ---');
-  const testPayloads = [
-    { name: 'with id=subId, ticket_id=subId', body: { id: subId, ticket_id: subId } },
-    { name: 'with ticket_checkrepair_id=subId', body: { ticket_checkrepair_id: subId, id: subId } }
-  ];
-
-  for (const tp of testPayloads) {
-    const b = new URLSearchParams();
-    for (const k in tp.body) b.set(k, tp.body[k]);
-    b.set('token', data.token);
-    b.set('key', data.key);
-
-    const mRes = await fetch(base + '/main/ajax/ticket_view/inspector/ModalView_inspector.php', {
-      method: 'POST',
-      headers: {
-        Origin: base,
-        Referer: base + '/main/ticket_checkrepair_view.php?id=' + subId,
-        'X-Requested-With': 'XMLHttpRequest',
-        Cookie: cookie
-      },
-      body: b
-    });
-    console.log(tp.name, 'status:', mRes.status);
-    const mHtml = await mRes.text();
-    console.log('HTML preview (first 1000 chars):', mHtml.substring(0, 1000));
-    const statusMatch = mHtml.match(/<label[^>]*class=["'][^"']*text-[^"']*["'][^>]*>([\s\S]*?)<\/label>/i);
-    console.log('Parsed status:', statusMatch ? statusMatch[1].trim() : 'NONE');
+  // Find where ModalView_inspector.php is called in viewHtml
+  const phpIdx = viewHtml.indexOf('ModalView_inspector.php');
+  if (phpIdx !== -1) {
+    console.log('=== AJAX Call around ModalView_inspector.php: ===');
+    console.log(viewHtml.substring(phpIdx - 200, phpIdx + 300));
   }
 
 }
