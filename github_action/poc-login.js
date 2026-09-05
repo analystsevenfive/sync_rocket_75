@@ -141,45 +141,83 @@ async function main() {
   });
   const listPageHtml = await listPageRes.text();
 
-  // 1. Search for function name and button that calls ModalProduct in ticket_list.php
-  const fnMatch = listPageHtml.match(/function\s+(\w+)\s*\([^)]*product_id[^)]*\)[\s\S]*?ajax\/ticket\/ModalProduct\.php/i);
-  console.log('Function calling ModalProduct:', fnMatch ? fnMatch[0] : 'None');
-
-  // 1. Find a <tr> that has Modal_showPd
-  const trMatch = tableHtml.match(/<tr[^>]*>[\s\S]*?Modal_showPd\(['"](\d+)['"]\)[\s\S]*?<\/tr>/i);
-  if (trMatch) {
-    console.log('=== Table Row with Modal_showPd: ===');
-    console.log(trMatch[0].substring(0, 1000));
+  // Test extractParentToProductIdMap
+  function extractParentToProductIdMap(html) {
+    const map = {};
+    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let match;
+    while ((match = rowRegex.exec(html)) !== null) {
+      const content = match[1];
+      const parentMatch = content.match(/ticket_view\.php\?id=(\d+)/i);
+      const prodMatch = content.match(/Modal_showPd\(['"](\d+)['"]\)/i);
+      if (parentMatch && prodMatch) {
+        map[parentMatch[1]] = prodMatch[1];
+      }
+    }
+    return map;
   }
 
-  // 2. Call ModalProduct.php with product_id = 9500128559
-  const testProdId = '9500128559';
-  console.log('=== Calling ModalProduct.php with product_id = ' + testProdId + ' ===');
-  const prodBody = new URLSearchParams();
-  prodBody.set('product_id', testProdId);
-  prodBody.set('token', data.token);
-  prodBody.set('key', data.key);
+  function parseSalesInvoiceNo(html) {
+    if (!html || typeof html !== 'string') return '';
+    const labelMatch = html.match(/<label[^>]*>\s*เลขที่บิลขาย\s*<\/label>[\s\S]*?<input\b([^>]*)>/i);
+    if (labelMatch) {
+      const valMatch = labelMatch[1].match(/\bvalue=["']([^"']*)["']/i);
+      return valMatch ? valMatch[1].trim() : '';
+    }
+    return '';
+  }
 
-  const prodRes = await fetch(base + '/main/ajax/ticket/ModalProduct.php', {
-    method: 'POST',
-    headers: {
-      Origin: base,
-      Referer: base + '/main/ticket_list.php',
-      'X-Requested-With': 'XMLHttpRequest',
-      Cookie: cookie
-    },
-    body: prodBody
+  const prodMap = extractParentToProductIdMap(tableHtml);
+  console.log('Total parent tickets mapped to productId in tableHtml:', Object.keys(prodMap).length);
+  const sampleEntries = Object.entries(prodMap).slice(0, 5);
+  console.log('Sample parent->product mappings:', sampleEntries);
+
+  // Check ticket 2267317011
+  const subViewRes = await fetch(base + '/main/ticket_checkrepair_view.php?id=2267317011', {
+    headers: { Cookie: cookie }
   });
-  console.log('ModalProduct status:', prodRes.status);
-  const prodHtml = await prodRes.text();
-  console.log('=== FULL ModalProduct HTML: ===');
-  console.log(prodHtml);
+  const subViewHtml = await subViewRes.text();
+  const parentIdMatch = subViewHtml.match(/ticket_view\.php\?id=(\d+)/i);
+  const parentId = parentIdMatch ? parentIdMatch[1] : null;
+  console.log('SubTicket 2267317011 parentId:', parentId);
 
+  // Check parent page for Modal_showPd
+  if (parentId) {
+    const parentViewRes = await fetch(base + '/main/ticket_view.php?id=' + parentId, {
+      headers: { Cookie: cookie }
+    });
+    const parentViewHtml = await parentViewRes.text();
+    const parentPdMatch = parentViewHtml.match(/Modal_showPd\(['"](\d+)['"]\)/i);
+    console.log('Parent page Modal_showPd match:', parentPdMatch ? parentPdMatch[1] : 'None');
+    console.log('Is parent in tableHtml map?:', prodMap[parentId] || 'No');
+  }
+
+  // Fetch 5 sample ModalProducts and check invoice numbers
+  const testIds = Object.values(prodMap).slice(0, 5);
+  for (const pid of testIds) {
+    const prodBody = new URLSearchParams();
+    prodBody.set('product_id', pid);
+    prodBody.set('token', data.token);
+    prodBody.set('key', data.key);
+
+    const res = await fetch(base + '/main/ajax/ticket/ModalProduct.php', {
+      method: 'POST',
+      headers: {
+        Origin: base,
+        Referer: base + '/main/ticket_list.php',
+        'X-Requested-With': 'XMLHttpRequest',
+        Cookie: cookie
+      },
+      body: prodBody
+    });
+    const html = await res.text();
+    const invoice = parseSalesInvoiceNo(html);
+    console.log(`Product ${pid} -> Sales Invoice No: "${invoice}"`);
+  }
 }
 
 main().catch(function(err) {
-
   console.error('PoC ล้มเหลว:', err);
   process.exit(1);
-
 });
+
