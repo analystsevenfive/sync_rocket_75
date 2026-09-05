@@ -735,7 +735,7 @@ async function getInspectorModalHtml(ticketId, auth) {
 
   const headers = {
     Origin: ROCKET_BASE,
-    Referer: ROCKET_BASE + '/main/ticket_view.php?id=' + ticketId,
+    Referer: ROCKET_BASE + '/main/ticket_checkrepair_view.php?id=' + ticketId,
     'X-Requested-With': 'XMLHttpRequest'
   };
   if (auth.cookie) {
@@ -743,6 +743,7 @@ async function getInspectorModalHtml(ticketId, auth) {
   }
 
   const body = new URLSearchParams();
+  body.set('ticket_checkrepair_id', String(ticketId));
   body.set('id', String(ticketId));
   body.set('ticket_id', String(ticketId));
   body.set('token', auth.token);

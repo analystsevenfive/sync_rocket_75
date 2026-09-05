@@ -164,20 +164,20 @@ async function main() {
 
   if (yesterdayTickets.length > 0) {
     console.log('กำลังดึงสถานะการตรวจงาน (ModalView_inspector)...');
-    const parentIdsToFetch = [...new Set(yesterdayTickets.map(function(t) {
-      return t.parentTicketId || t.ticketId;
+    const subIdsToFetch = [...new Set(yesterdayTickets.map(function(t) {
+      return t.ticketId;
     }).filter(Boolean))];
 
     const inspectorMap = {};
-    await rocket.mapConcurrent(parentIdsToFetch, INSPECTOR_CONCURRENCY, async function(parentId) {
-      const modalHtml = await rocket.getInspectorModalHtml(parentId, auth);
+    await rocket.mapConcurrent(subIdsToFetch, INSPECTOR_CONCURRENCY, async function(subId) {
+      const modalHtml = await rocket.getInspectorModalHtml(subId, auth);
       const parsed = rocket.parseInspectorModal(modalHtml);
-      inspectorMap[String(parentId)] = parsed;
+      inspectorMap[String(subId)] = parsed;
     });
 
     yesterdayTickets.forEach(function(t) {
-      const pid = String(t.parentTicketId || t.ticketId);
-      const insp = inspectorMap[pid] || {};
+      const sid = String(t.ticketId);
+      const insp = inspectorMap[sid] || {};
       t.inspectionStatus = insp.status || '';
     });
   }

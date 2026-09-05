@@ -127,37 +127,28 @@ async function main() {
     tableHeaders.Cookie = cookie;
   }
 
-  const subId = '2267317011';
-  console.log('--- Step A: fetch ticket_checkrepair_view.php?id=' + subId + ' ---');
-  const viewRes = await fetch(base + '/main/ticket_checkrepair_view.php?id=' + subId, {
-    method: 'GET',
-    headers: {
-      Origin: base,
-      Referer: base + '/main/ticket_list.php',
-      Cookie: cookie
-    }
-  });
-  const viewHtml = await viewRes.text();
-  console.log('viewHtml length:', viewHtml.length);
-  
-  console.log('--- Calling ModalView_inspector with ticket_checkrepair_id = ' + subId + ' ---');
-  const b = new URLSearchParams();
-  b.set('ticket_checkrepair_id', subId);
-
-  const mRes = await fetch(base + '/main/ajax/ticket_view/inspector/ModalView_inspector.php', {
+  const tableRes = await fetch(base + '/main/ajax/ticket/getTable.php', {
     method: 'POST',
-    headers: {
-      Origin: base,
-      Referer: base + '/main/ticket_checkrepair_view.php?id=' + subId,
-      'X-Requested-With': 'XMLHttpRequest',
-      Cookie: cookie
-    },
-    body: b
+    headers: tableHeaders,
+    body: tableBody
   });
-  console.log('ModalView status:', mRes.status);
-  const mHtml = await mRes.text();
-  console.log('FULL MODAL HTML:');
-  console.log(mHtml);
+
+  console.log('POST getTable.php status:', tableRes.status);
+
+  const tableHtml = await tableRes.text();
+  console.log('getTable.php response length:', tableHtml.length);
+
+  const idMatches = tableHtml.match(/ticket_view\.php\?id=(\d+)/gi) || [];
+  const uniqueIds = new Set(idMatches);
+
+  console.log('Parent ticket ID ที่เจอ:', uniqueIds.size);
+
+  if (uniqueIds.size > 0) {
+    console.log('AJAX ENDPOINT WORKS — พอร์ตทั้งระบบไป Node.js/GitHub Actions ได้จริง');
+  } else {
+    console.log('เจอ 0 parent ticket — เช็คช่วงวันที่ หรืออาจโดน block บางส่วน (ดู response ด้านบนประกอบ)');
+    process.exit(1);
+  }
 
 }
 
