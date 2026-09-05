@@ -20,12 +20,9 @@ async function main() {
     body: body
   });
   const html = await res.text();
-  console.log('overview for 6989878952 has รัตนา?:', html.includes('รัตนา'));
-  if (html.includes('รัตนา')) {
-    const idx = html.indexOf('รัตนา');
-    console.log('Context:', html.substring(Math.max(0, idx - 150), idx + 150));
-  } else {
-    console.log('Clean overview text:', rocket.cleanText(html).substring(0, 1500));
+  const idx = html.indexOf('Activities');
+  if (idx !== -1) {
+    console.log('Activities HTML:', html.substring(idx, idx + 2000));
   }
 }
 
