@@ -1,28 +1,27 @@
-const rocket = require('./lib/rocket-client');
+const sheetsLib = require('./lib/sheets-client');
 
 async function main() {
-  const auth = await rocket.rocketLogin();
-  const parentId = '6989878952'; // BKIN0826-000736
+  const spreadsheetId = process.env.SPREADSHEET_ID;
+  console.log('SPREADSHEET_ID:', spreadsheetId);
+  const sheets = await sheetsLib.getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  console.log('Spreadsheet Title:', meta.data.properties.title);
+  console.log('=== ALL SHEETS ===');
+  for (const s of meta.data.sheets) {
+    console.log(`- "${s.properties.title}" (id: ${s.properties.sheetId}, rows: ${s.properties.gridProperties.rowCount}, cols: ${s.properties.gridProperties.columnCount})`);
+  }
 
-  const body = new URLSearchParams();
-  body.set('ticket_id', parentId);
-  body.set('token', auth.token);
-  body.set('key', auth.key);
-
-  const res = await fetch('https://rocket75.com/main/ajax/ticket_view/overview.php', {
-    method: 'POST',
-    headers: {
-      Origin: 'https://rocket75.com',
-      Referer: 'https://rocket75.com/main/ticket_view.php?id=' + parentId,
-      'X-Requested-With': 'XMLHttpRequest',
-      Cookie: auth.cookie
-    },
-    body: body
-  });
-  const html = await res.text();
-  const idx = html.indexOf('begin::Timeline');
-  if (idx !== -1) {
-    console.log('Timeline HTML:', html.substring(idx, idx + 1500));
+  // Check if any sheet has "Installation" or "ติดตั้ง" or "7-Day"
+  for (const s of meta.data.sheets) {
+    const title = s.properties.title;
+    if (title.includes('Install') || title.includes('ติดตั้ง') || title.includes('7-Day') || title.includes('Plan')) {
+      console.log(`\n=== INSPECTING SHEET: "${title}" ===`);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `'${title}'!A1:Z5`
+      });
+      console.log('Rows:', JSON.stringify(res.data.values, null, 2));
+    }
   }
 }
 
