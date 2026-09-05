@@ -772,27 +772,58 @@ function parseInspectorModal(html) {
     return { status: '', type: '', inspector: '', note: '' };
   }
 
-  const statusRegex = /<(?:label|b|strong|th|dt)[^>]*>\s*สถานะ\s*:?\s*<\/(?:label|b|strong|th|dt)>[\s\S]*?<(?:div|span|td|dd|p)[^>]*>([\s\S]*?)<\/(?:div|span|td|dd|p)>/i;
-  const statusMatch = html.match(statusRegex);
-  let status = statusMatch ? cleanText(statusMatch[1]) : '';
-
-  if (!status) {
-    if (html.includes('งานจบ')) status = 'งานจบ';
-    else if (html.includes('งานไม่จบ')) status = 'งานไม่จบ';
-    else if (html.includes('รอตรวจงาน')) status = 'รอตรวจงาน';
+  // 1. คัดเฉพาะแท็บ "ตรวจงาน" (id="inspector_tab_pane_1") เพื่อไม่ให้ปนกับแท็บอื่น
+  let tabHtml = html;
+  const tabMatch = html.match(/id=["']inspector_tab_pane_1["'][\s\S]*?(?=<div[^>]*id=["']inspector_tab_pane_2["']|<\/form>|$)/i);
+  if (tabMatch) {
+    tabHtml = tabMatch[0];
   }
 
-  const typeRegex = /<(?:label|b|strong|th|dt)[^>]*>\s*ประเภท\s*:?\s*<\/(?:label|b|strong|th|dt)>[\s\S]*?<(?:div|span|td|dd|p)[^>]*>([\s\S]*?)<\/(?:div|span|td|dd|p)>/i;
-  const typeMatch = html.match(typeRegex);
-  const type = typeMatch ? cleanText(typeMatch[1]) : '';
+  let status = '';
+  let type = '';
+  let inspector = '';
+  let note = '';
 
-  const inspectorRegex = /<(?:label|b|strong|th|dt)[^>]*>\s*ผู้ตรวจ\s*:?\s*<\/(?:label|b|strong|th|dt)>[\s\S]*?<(?:div|span|td|dd|p)[^>]*>([\s\S]*?)<\/(?:div|span|td|dd|p)>/i;
-  const inspectorMatch = html.match(inspectorRegex);
-  const inspector = inspectorMatch ? cleanText(inspectorMatch[1]) : '';
+  // 2. ดึง status จาก label ที่ระบุ class text-... (เช่น text-success "งานจบ", text-danger "งานไม่จบ")
+  const statusLabelMatch = tabHtml.match(/<label[^>]*class=["'][^"']*text-(?:danger|success|primary|warning|info|secondary)[^"']*["'][^>]*>([\s\S]*?)<\/label>/i);
+  if (statusLabelMatch) {
+    status = cleanText(statusLabelMatch[1]);
+  }
 
-  const noteRegex = /<(?:label|b|strong|th|dt)[^>]*>\s*หมายเหตุ\s*:?\s*<\/(?:label|b|strong|th|dt)>[\s\S]*?<(?:div|span|td|dd|p)[^>]*>([\s\S]*?)<\/(?:div|span|td|dd|p)>/i;
-  const noteMatch = html.match(noteRegex);
-  const note = noteMatch ? cleanText(noteMatch[1]) : '';
+  // 3. หาทั้งแถวที่เป็นค่า (โครงสร้างเป็น <div class="row mb-3"> 2 แถว แถวแรกคือ header แถวที่สองคือ value)
+  const rowMatches = tabHtml.match(/<div\s+class=["']row\s+mb-3["'][^>]*>[\s\S]*?<\/div>\s*<\/div>/gi) || [];
+  if (rowMatches.length >= 2) {
+    const valRow = rowMatches[1];
+    const cols = [];
+    const colRegex = /<div\s+class=["']col-(?:3|4)\s+mb-3["'][^>]*>([\s\S]*?)<\/div>/gi;
+    let cm;
+    while ((cm = colRegex.exec(valRow)) !== null) {
+      cols.push(cleanText(cm[1]));
+    }
+    if (!status && cols.length >= 1) status = cols[0];
+    if (cols.length >= 2 && cols[1] !== 'ไม่ระบุ') type = cols[1];
+    if (cols.length >= 3) inspector = cols[2];
+  }
+
+  // 4. Fallback ป้องกันกรณี status ติดชื่อ header (เช่น "ประเภท", "สถานะ")
+  const invalidStatuses = ['สถานะ', 'ประเภท', 'ผู้ตรวจ', 'หมายเหตุ'];
+  if (!status || invalidStatuses.includes(status)) {
+    if (tabHtml.includes('งานไม่จบ')) {
+      status = 'งานไม่จบ';
+    } else if (tabHtml.includes('งานจบ')) {
+      status = 'งานจบ';
+    } else if (tabHtml.includes('รอตรวจงาน')) {
+      status = 'รอตรวจงาน';
+    } else {
+      status = '';
+    }
+  }
+
+  // 5. หมายเหตุ (textarea id="inspector_note")
+  const noteMatch = tabHtml.match(/<textarea[^>]*id=["']inspector_note["'][^>]*>([\s\S]*?)<\/textarea>/i);
+  if (noteMatch) {
+    note = cleanText(noteMatch[1]);
+  }
 
   return {
     status: status,
