@@ -4,21 +4,46 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const tickets = ['BKIN0826-000581', 'BKIN0826-000608', 'BKIN0826-000757', 'BKIN0826-000736'];
-  for (const t of tickets) {
-    const html = await rocket.getParentTicketHtml(auth, '01/08/2026', '12/09/2026', '1', t);
-    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let m;
-    while ((m = rowRegex.exec(html)) !== null) {
-      if (m[1].includes(t)) {
-        const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-        let cMatch;
-        const cells = [];
-        while ((cMatch = cellRegex.exec(m[1])) !== null) {
-          cells.push(rocket.cleanText(cMatch[1]));
-        }
-        console.log(`[${t}] Col0: ${cells[0]} | Col1: ${cells[1]} | Col3: ${cells[3]}`);
-      }
+  // Search for BKIN0826-000757
+  const html = await rocket.getParentTicketHtml(auth, '01/08/2026', '12/09/2026', '1', 'BKIN0826-000757');
+  const pMatch = html.match(/ticket_view\.php\?id=(\d+)/i);
+  if (!pMatch) {
+    console.log('Parent not found for BKIN0826-000757');
+    return;
+  }
+  const parentId = pMatch[1];
+  console.log('Parent ID:', parentId);
+
+  // Check parent HTML
+  const pRes = await fetch('https://rocket75.com/main/ticket_view.php?id=' + parentId, {
+    headers: { Cookie: auth.cookie }
+  });
+  const pHtml = await pRes.text();
+  console.log('Parent HTML has แววดาว?:', pHtml.includes('แววดาว'));
+  if (pHtml.includes('แววดาว')) {
+    const idx = pHtml.indexOf('แววดาว');
+    console.log('Parent context:', pHtml.substring(Math.max(0, idx - 150), idx + 150));
+  }
+
+  // Check checkrepair
+  const crHtml = await rocket.getCheckRepairHtml(parentId, auth);
+  console.log('Checkrepair HTML has แววดาว?:', crHtml.includes('แววดาว'));
+  if (crHtml.includes('แววดาว')) {
+    const idx = crHtml.indexOf('แววดาว');
+    console.log('Checkrepair context:', crHtml.substring(Math.max(0, idx - 150), idx + 150));
+  }
+
+  // Check sub-ticket detail
+  const subIds = rocket.extractCheckRepairIds(crHtml);
+  for (const sId of subIds) {
+    const sRes = await fetch('https://rocket75.com/main/ticket_checkrepair_view.php?id=' + sId, {
+      headers: { Cookie: auth.cookie }
+    });
+    const sHtml = await sRes.text();
+    console.log(`Sub ${sId} has แววดาว?:`, sHtml.includes('แววดาว'));
+    if (sHtml.includes('แววดาว')) {
+      const idx = sHtml.indexOf('แววดาว');
+      console.log('Sub context:', sHtml.substring(Math.max(0, idx - 150), idx + 150));
     }
   }
 }
