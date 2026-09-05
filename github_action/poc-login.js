@@ -2,19 +2,20 @@ const rocket = require('./lib/rocket-client');
 
 async function main() {
   const auth = await rocket.rocketLogin();
-  console.log('LOGIN OK');
-
-  // Search name_search = 'แววดาว'
-  const html = await rocket.getParentTicketHtml(auth, '01/08/2026', '12/09/2026', '1', 'แววดาว');
-  console.log('Search "แววดาว" table length:', html.length);
-  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let m;
-  let count = 0;
-  while ((m = rowRegex.exec(html)) !== null) {
-    if (m[1].includes('ticket_view.php')) {
-      count++;
-      console.log('Row ' + count + ':', rocket.cleanText(m[1]).substring(0, 300));
-    }
+  const res = await fetch('https://rocket75.com/hr/organization_chart.php', {
+    headers: { Cookie: auth.cookie }
+  });
+  const html = await res.text();
+  console.log('Org chart length:', html.length);
+  console.log('Has แววดาว?:', html.includes('แววดาว'));
+  if (html.includes('แววดาว')) {
+    const idx = html.indexOf('แววดาว');
+    console.log('Context แววดาว:', html.substring(Math.max(0, idx - 100), idx + 100));
+  }
+  console.log('Has รัตนา?:', html.includes('รัตนา'));
+  if (html.includes('รัตนา')) {
+    const idx = html.indexOf('รัตนา');
+    console.log('Context รัตนา:', html.substring(Math.max(0, idx - 100), idx + 100));
   }
 }
 
