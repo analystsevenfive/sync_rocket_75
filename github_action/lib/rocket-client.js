@@ -492,6 +492,31 @@ function extractParentTicketIds(html) {
 
 
 
+function extractParentToProductIdMap(html) {
+
+  const map = {};
+  if (!html || typeof html !== 'string') {
+    return map;
+  }
+
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let match;
+  while ((match = rowRegex.exec(html)) !== null) {
+    const content = match[1];
+    const parentMatch = content.match(/ticket_view\.php\?id=(\d+)/i);
+    const prodMatch = content.match(/Modal_showPd\(['"](\d+)['"]\)/i);
+    if (parentMatch && prodMatch) {
+      map[parentMatch[1]] = prodMatch[1];
+    }
+  }
+
+  return map;
+
+}
+
+
+
+
 /*************************************************
  * SUB TICKETS (checkrepair.php)
  *************************************************/
@@ -838,8 +863,65 @@ function parseInspectorModal(html) {
 
 
 /*************************************************
+ * PRODUCT MODAL (ModalProduct.php)
+ *************************************************/
+
+async function getModalProductHtml(productId, auth) {
+
+  const headers = {
+    Origin: ROCKET_BASE,
+    Referer: ROCKET_BASE + '/main/ticket_list.php',
+    'X-Requested-With': 'XMLHttpRequest'
+  };
+  if (auth.cookie) {
+    headers.Cookie = auth.cookie;
+  }
+
+  const body = new URLSearchParams();
+  body.set('product_id', String(productId));
+  body.set('token', auth.token);
+  body.set('key', auth.key);
+
+  try {
+    const res = await fetchWithTimeout(
+      ROCKET_BASE + '/main/ajax/ticket/ModalProduct.php',
+      { method: 'POST', headers: headers, body: body }
+    );
+    if (res.status === 200) {
+      return await res.text();
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return '';
+
+}
+
+
+
+function parseSalesInvoiceNo(html) {
+
+  if (!html || typeof html !== 'string') {
+    return '';
+  }
+
+  const labelMatch = html.match(/<label[^>]*>\s*เลขที่บิลขาย\s*<\/label>[\s\S]*?<input\b([^>]*)>/i);
+  if (labelMatch) {
+    const valMatch = labelMatch[1].match(/\bvalue=["']([^"']*)["']/i);
+    return valMatch ? cleanText(valMatch[1]) : '';
+  }
+
+  return '';
+
+}
+
+
+
+/*************************************************
  * HTML HELPERS (port ตรงจาก trick.js — logic เดิมเป๊ะ)
  *************************************************/
+
 
 function decodeXmlEntities(text) {
   return String(text)
@@ -1003,6 +1085,7 @@ module.exports = {
   formatDateTimeBangkok,
   getParentTicketHtml,
   extractParentTicketIds,
+  extractParentToProductIdMap,
   getCheckRepairHtml,
   extractCheckRepairIds,
   extractCheckRepairInfo,
@@ -1011,6 +1094,8 @@ module.exports = {
   getParentPageHtml,
   getInspectorModalHtml,
   parseInspectorModal,
+  getModalProductHtml,
+  parseSalesInvoiceNo,
   decodeXmlEntities,
   cleanText,
   escapeRegex,
@@ -1021,3 +1106,4 @@ module.exports = {
   extractLastBreadcrumbText,
   extractRegex
 };
+

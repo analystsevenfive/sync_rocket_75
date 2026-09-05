@@ -6,7 +6,7 @@
  *
  * คอลัมน์ (Header ภาษาอังกฤษ):
  *   Ticket ID, Ticket No, Report Date, Appointment, End Time,
- *   Inspection Status, Customer, Branch, Contact, Phone,
+ *   Inspection Status, Sales Invoice No., Customer, Branch, Contact, Phone,
  *   Problem Reported, Product Name, Technician, Team, Serial,
  *   URL, Last Sync
  *************************************************/
@@ -28,6 +28,7 @@ const HEADERS = [
   'Appointment',
   'End Time',
   'Inspection Status',
+  'Sales Invoice No.',
   'Customer',
   'Branch',
   'Contact',
@@ -61,6 +62,7 @@ function jobToRow(d, lastSync) {
     d.appointment,
     d.endTime || '',
     d.inspectionStatus || '',
+    forceTextIfNumeric(d.salesInvoiceNo),
     d.customer,
     d.branch,
     d.contact,
@@ -74,6 +76,7 @@ function jobToRow(d, lastSync) {
     lastSync
   ];
 }
+
 
 
 
@@ -93,7 +96,8 @@ async function main() {
 
   const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, DATE_TYPE_APPOINTMENT);
   const parentIds = rocket.extractParentTicketIds(parentHtml);
-  console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length);
+  const parentToProductMap = rocket.extractParentToProductIdMap(parentHtml);
+  console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length + ' (แมป Product ID ได้: ' + Object.keys(parentToProductMap).length + ')');
 
   // ==========================================
   // 2. CANDIDATE SUB TICKETS + ช่าง/ทีม ต่อ parent
@@ -159,7 +163,7 @@ async function main() {
   console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันเมื่อวานจริง: ' + yesterdayTickets.length);
 
   // ==========================================
-  // 4. FETCH INSPECTION STATUS (ดูการตรวจงาน)
+  // 4. FETCH INSPECTION STATUS & SALES INVOICE (ดูการตรวจงาน & เลขที่บิลขาย)
   // ==========================================
 
   if (yesterdayTickets.length > 0) {
@@ -180,7 +184,35 @@ async function main() {
       const insp = inspectorMap[sid] || {};
       t.inspectionStatus = insp.status || '';
     });
+
+    // แมป parentTicketId -> productId
+    yesterdayTickets.forEach(function(t) {
+      if (t.parentTicketId && parentToProductMap[String(t.parentTicketId)]) {
+        t.productId = parentToProductMap[String(t.parentTicketId)];
+      }
+    });
+
+    // ดึงเลขที่บิลขาย (ModalProduct.php) จาก product_id
+    const productIdsToFetch = [...new Set(yesterdayTickets.map(function(t) {
+      return t.productId;
+    }).filter(Boolean))];
+
+    console.log('กำลังดึงเลขที่บิลขาย (ModalProduct.php) สำหรับ ' + productIdsToFetch.length + ' รายการ...');
+    const productInvoiceMap = {};
+    if (productIdsToFetch.length > 0) {
+      await rocket.mapConcurrent(productIdsToFetch, 20, async function(prodId) {
+        const prodHtml = await rocket.getModalProductHtml(prodId, auth);
+        const invoiceNo = rocket.parseSalesInvoiceNo(prodHtml);
+        productInvoiceMap[String(prodId)] = invoiceNo;
+      });
+    }
+
+    yesterdayTickets.forEach(function(t) {
+      const pid = t.productId ? String(t.productId) : '';
+      t.salesInvoiceNo = productInvoiceMap[pid] || '';
+    });
   }
+
 
   // ==========================================
   // 5. SORT BY APPOINTMENT (จัดเรียงจากเช้า ไปเย็น)
