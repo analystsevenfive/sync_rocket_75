@@ -138,16 +138,28 @@ async function main() {
   const tableHtml = await tableRes.text();
   console.log('getTable.php response length:', tableHtml.length);
 
-  const idMatches = tableHtml.match(/ticket_view\.php\?id=(\d+)/gi) || [];
-  const uniqueIds = new Set(idMatches);
+  // 1. Check if ModalProduct is mentioned in tableHtml
+  const mpMatches = tableHtml.match(/ModalProduct[^\n"']*/gi) || [];
+  console.log('ModalProduct in tableHtml:', mpMatches.slice(0, 5));
 
-  console.log('Parent ticket ID ที่เจอ:', uniqueIds.size);
-
-  if (uniqueIds.size > 0) {
-    console.log('AJAX ENDPOINT WORKS — พอร์ตทั้งระบบไป Node.js/GitHub Actions ได้จริง');
+  // 2. Search for the JavaScript function ModalProduct in ticket_list.php
+  const listPageRes = await fetch(base + '/main/ticket_list.php', {
+    headers: { Cookie: cookie }
+  });
+  const listPageHtml = await listPageRes.text();
+  const fnIdx = listPageHtml.indexOf('ModalProduct');
+  if (fnIdx !== -1) {
+    console.log('ModalProduct in ticket_list.php:');
+    console.log(listPageHtml.substring(fnIdx - 30, fnIdx + 400));
   } else {
-    console.log('เจอ 0 parent ticket — เช็คช่วงวันที่ หรืออาจโดน block บางส่วน (ดู response ด้านบนประกอบ)');
-    process.exit(1);
+    console.log('ModalProduct not in ticket_list.php');
+  }
+
+  // Also check if ModalProduct is in tableHtml around the match
+  if (mpMatches.length > 0) {
+    const idx = tableHtml.indexOf(mpMatches[0]);
+    console.log('Snippet in tableHtml around ModalProduct:');
+    console.log(tableHtml.substring(Math.max(0, idx - 100), idx + 200));
   }
 
 }
