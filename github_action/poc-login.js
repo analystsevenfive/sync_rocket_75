@@ -138,6 +138,35 @@ async function main() {
   const tableHtml = await tableRes.text();
   console.log('getTable.php response length:', tableHtml.length);
 
+  const rocket = require('./lib/rocket-client');
+  const subViewRes = await fetch(base + '/main/ticket_checkrepair_view.php?id=2267317011', {
+    headers: { Cookie: cookie }
+  });
+  const subViewHtml = await subViewRes.text();
+
+  function extractAllDtLabels(html) {
+    const labels = [];
+    const re = /<dt[^>]*>([\s\S]*?)<\/dt>[\s\S]*?<dd[^>]*>([\s\S]*?)<\/dd>/gi;
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      labels.push({ label: rocket.cleanText(m[1]), value: rocket.cleanText(m[2]) });
+    }
+    return labels;
+  }
+
+  console.log('=== SubTicket 2267317011 DT labels: ===');
+  console.log(JSON.stringify(extractAllDtLabels(subViewHtml), null, 2));
+
+  const parentIdMatch = subViewHtml.match(/ticket_view\.php\?id=(\d+)/i);
+  if (parentIdMatch) {
+    const parentViewRes = await fetch(base + '/main/ticket_view.php?id=' + parentIdMatch[1], {
+      headers: { Cookie: cookie }
+    });
+    const parentViewHtml = await parentViewRes.text();
+    console.log('=== Parent Ticket ' + parentIdMatch[1] + ' DT labels: ===');
+    console.log(JSON.stringify(extractAllDtLabels(parentViewHtml), null, 2));
+  }
+
   const idMatches = tableHtml.match(/ticket_view\.php\?id=(\d+)/gi) || [];
   const uniqueIds = new Set(idMatches);
 
