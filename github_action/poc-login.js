@@ -172,49 +172,20 @@ async function main() {
   const sampleEntries = Object.entries(prodMap).slice(0, 5);
   console.log('Sample parent->product mappings:', sampleEntries);
 
-  // Check ticket 2267317011
+  const rocket = require('./lib/rocket-client');
   const subViewRes = await fetch(base + '/main/ticket_checkrepair_view.php?id=2267317011', {
     headers: { Cookie: cookie }
   });
   const subViewHtml = await subViewRes.text();
-  const parentIdMatch = subViewHtml.match(/ticket_view\.php\?id=(\d+)/i);
-  const parentId = parentIdMatch ? parentIdMatch[1] : null;
-  console.log('SubTicket 2267317011 parentId:', parentId);
-
-  // Check parent page for Modal_showPd
-  if (parentId) {
-    const parentViewRes = await fetch(base + '/main/ticket_view.php?id=' + parentId, {
-      headers: { Cookie: cookie }
-    });
-    const parentViewHtml = await parentViewRes.text();
-    const parentPdMatch = parentViewHtml.match(/Modal_showPd\(['"](\d+)['"]\)/i);
-    console.log('Parent page Modal_showPd match:', parentPdMatch ? parentPdMatch[1] : 'None');
-    console.log('Is parent in tableHtml map?:', prodMap[parentId] || 'No');
-  }
-
-  // Fetch 5 sample ModalProducts and check invoice numbers
-  const testIds = Object.values(prodMap).slice(0, 5);
-  for (const pid of testIds) {
-    const prodBody = new URLSearchParams();
-    prodBody.set('product_id', pid);
-    prodBody.set('token', data.token);
-    prodBody.set('key', data.key);
-
-    const res = await fetch(base + '/main/ajax/ticket/ModalProduct.php', {
-      method: 'POST',
-      headers: {
-        Origin: base,
-        Referer: base + '/main/ticket_list.php',
-        'X-Requested-With': 'XMLHttpRequest',
-        Cookie: cookie
-      },
-      body: prodBody
-    });
-    const html = await res.text();
-    const invoice = parseSalesInvoiceNo(html);
-    console.log(`Product ${pid} -> Sales Invoice No: "${invoice}"`);
-  }
+  console.log('=== Ticket 2267317011 fields ===');
+  console.log('reportDate:', rocket.getDtValue(subViewHtml, 'วันที่แจ้ง'));
+  console.log('endTime:', rocket.getH5Value(subViewHtml, 'เวลาเสร็จงาน'));
+  console.log('startTime:', rocket.getH5Value(subViewHtml, 'เวลาเข้างาน'));
+  console.log('duration:', rocket.getH5Value(subViewHtml, 'เวลาที่ใช้ (นาที)'));
+  console.log('appointment:', rocket.cleanText(rocket.extractBeforeLabel(subViewHtml, 'เวลานัดหมาย')));
 }
+
+
 
 main().catch(function(err) {
   console.error('PoC ล้มเหลว:', err);
