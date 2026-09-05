@@ -150,18 +150,16 @@ async function main() {
   const tvHtml = await tvRes.text();
   console.log('ticket_view.php status:', tvRes.status, 'length:', tvHtml.length);
 
-  const idx = tvHtml.indexOf('ที่อยู่สาขา');
-  console.log('ที่อยู่สาขา index in ticket_view.php:', idx);
-  if (idx !== -1) {
-    console.log('SURROUNDING HTML:');
-    console.log(tvHtml.substring(Math.max(0, idx - 100), Math.min(tvHtml.length, idx + 400)));
-  } else {
-    console.log('NOT FOUND ที่อยู่สาขา. Trying ที่อยู่:');
-    const idx2 = tvHtml.indexOf('ที่อยู่');
-    if (idx2 !== -1) {
-      console.log(tvHtml.substring(Math.max(0, idx2 - 100), Math.min(tvHtml.length, idx2 + 400)));
+  const ajaxMatches = tvHtml.match(/ajax\/[a-zA-Z0-9_/.-]+\.php/gi) || [];
+  console.log('ALL AJAX ENDPOINTS IN ticket_view.php:', [...new Set(ajaxMatches)]);
+
+  const scriptMatches = tvHtml.match(/<script[\s\S]*?<\/script>/gi) || [];
+  console.log('Script count:', scriptMatches.length);
+  scriptMatches.forEach((s, idx) => {
+    if (s.includes('ajax') || s.includes('load') || s.includes('ticket')) {
+      console.log(`Script ${idx} sample:`, s.substring(0, 300).replace(/\s+/g, ' '));
     }
-  }
+  });
 
 }
 
