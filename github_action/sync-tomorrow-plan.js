@@ -35,6 +35,7 @@ const PLAN_HEADERS = [
   'Appointment',
   'End Time',
   'Inspection Status',
+  'Active Stage',
   'Customer',
   'Branch',
   'Contact',
@@ -66,6 +67,7 @@ function planToRow(d, lastSync) {
     d.appointment,
     d.endTime || '',
     d.inspectionStatus || '',
+    d.activeStage || '',
     d.customer,
     d.branch,
     d.contact,
@@ -166,27 +168,53 @@ async function main() {
   console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันพรุ่งนี้จริง: ' + tomorrowTickets.length);
 
   // ==========================================
-  // 4. FETCH INSPECTION STATUS (ดูการตรวจงาน)
+  // 4. FETCH INSPECTION STATUS & ACTIVE STAGE (ดูการตรวจงาน & Active Stage)
   // ==========================================
 
   if (tomorrowTickets.length > 0) {
-    console.log('กำลังดึงสถานะการตรวจงาน (ModalView_inspector)...');
-    const parentIdsToFetch = [...new Set(tomorrowTickets.map(function(t) {
-      return t.parentTicketId || t.ticketId;
+    console.log('กำลังดึงสถานะการตรวจงาน & Active Stage (ModalView_inspector)...');
+    const subIdsToFetch = [...new Set(tomorrowTickets.map(function(t) {
+      return t.ticketId;
     }).filter(Boolean))];
 
     const inspectorMap = {};
-    await rocket.mapConcurrent(parentIdsToFetch, 20, async function(parentId) {
-      const modalHtml = await rocket.getInspectorModalHtml(parentId, auth);
+    await rocket.mapConcurrent(subIdsToFetch, 20, async function(subId) {
+      const modalHtml = await rocket.getInspectorModalHtml(subId, auth);
       const parsed = rocket.parseInspectorModal(modalHtml);
-      inspectorMap[String(parentId)] = parsed;
+      inspectorMap[String(subId)] = parsed;
     });
 
     tomorrowTickets.forEach(function(t) {
-      const pid = String(t.parentTicketId || t.ticketId);
-      const insp = inspectorMap[pid] || {};
+      const sid = String(t.ticketId);
+      const insp = inspectorMap[sid] || {};
       t.inspectionStatus = insp.status || '';
+      t.activeStage = insp.type || '';
     });
+
+    // Fallback: สำหรับตั๋วที่ยังไม่มี type ใน inspector modal ให้ดึงจาก ticket_view.php?id=<parentId>
+    const missingStageParents = [...new Set(tomorrowTickets
+      .filter(function(t) { return !t.activeStage && (t.parentTicketId || t.ticketId); })
+      .map(function(t) { return t.parentTicketId || t.ticketId; }))];
+
+    if (missingStageParents.length > 0) {
+      console.log('กำลังดึง Active Stage เพิ่มเติมจาก ticket_view สำหรับ ' + missingStageParents.length + ' parent tickets...');
+      const parentStageMap = {};
+      await rocket.mapConcurrent(missingStageParents, 20, async function(parentId) {
+        try {
+          const pHtml = await rocket.getParentPageHtml(parentId, auth);
+          parentStageMap[String(parentId)] = rocket.parseCurrentJobType(pHtml);
+        } catch (e) {
+          // ignore error
+        }
+      });
+
+      tomorrowTickets.forEach(function(t) {
+        if (!t.activeStage) {
+          const pid = String(t.parentTicketId || t.ticketId);
+          t.activeStage = parentStageMap[pid] || '';
+        }
+      });
+    }
   }
 
   // ==========================================

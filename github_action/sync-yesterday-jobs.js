@@ -31,6 +31,7 @@ const HEADERS = [
   'End Time',
   'Working Time',
   'Inspection Status',
+  'Active Stage',
   'Sales Invoice No.',
   'Customer',
   'Branch',
@@ -67,6 +68,7 @@ function jobToRow(d, lastSync) {
     d.endTime || '',
     workingTime ? "'" + workingTime : '',
     d.inspectionStatus || '',
+    d.activeStage || '',
     forceTextIfNumeric(d.salesInvoiceNo),
     d.customer,
     d.branch,
@@ -186,11 +188,11 @@ async function main() {
   console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันเมื่อวานจริง: ' + yesterdayTickets.length);
 
   // ==========================================
-  // 4. FETCH INSPECTION STATUS & SALES INVOICE (ดูการตรวจงาน & เลขที่บิลขาย)
+  // 4. FETCH INSPECTION STATUS, ACTIVE STAGE & SALES INVOICE (ดูการตรวจงาน, Active Stage & เลขที่บิลขาย)
   // ==========================================
 
   if (yesterdayTickets.length > 0) {
-    console.log('กำลังดึงสถานะการตรวจงาน (ModalView_inspector)...');
+    console.log('กำลังดึงสถานะการตรวจงาน & Active Stage (ModalView_inspector)...');
     const subIdsToFetch = [...new Set(yesterdayTickets.map(function(t) {
       return t.ticketId;
     }).filter(Boolean))];
@@ -206,7 +208,33 @@ async function main() {
       const sid = String(t.ticketId);
       const insp = inspectorMap[sid] || {};
       t.inspectionStatus = insp.status || '';
+      t.activeStage = insp.type || '';
     });
+
+    // Fallback: สำหรับตั๋วที่ยังไม่มี type ใน inspector modal ให้ดึงจาก ticket_view.php?id=<parentId>
+    const missingStageParents = [...new Set(yesterdayTickets
+      .filter(function(t) { return !t.activeStage && (t.parentTicketId || t.ticketId); })
+      .map(function(t) { return t.parentTicketId || t.ticketId; }))];
+
+    if (missingStageParents.length > 0) {
+      console.log('กำลังดึง Active Stage เพิ่มเติมจาก ticket_view สำหรับ ' + missingStageParents.length + ' parent tickets...');
+      const parentStageMap = {};
+      await rocket.mapConcurrent(missingStageParents, 20, async function(parentId) {
+        try {
+          const pHtml = await rocket.getParentPageHtml(parentId, auth);
+          parentStageMap[String(parentId)] = rocket.parseCurrentJobType(pHtml);
+        } catch (e) {
+          // ignore error
+        }
+      });
+
+      yesterdayTickets.forEach(function(t) {
+        if (!t.activeStage) {
+          const pid = String(t.parentTicketId || t.ticketId);
+          t.activeStage = parentStageMap[pid] || '';
+        }
+      });
+    }
 
     // แมป parentTicketId -> productId
     yesterdayTickets.forEach(function(t) {

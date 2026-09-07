@@ -806,6 +806,21 @@ async function getParentPageHtml(parentId, auth) {
 
 
 
+function parseCurrentJobType(html) {
+
+  if (!html || typeof html !== 'string') {
+    return '';
+  }
+
+  return cleanText(extractRegex(
+    html,
+    /ประเภทงานปัจจุบัน\s*:?\s*(?:<\/[a-z0-9]+>)?\s*<span[^>]*>\s*([\s\S]*?)<\/span>/i
+  ));
+
+}
+
+
+
 /*************************************************
  * OVERVIEW TAB (ajax/ticket_view/overview.php)
  * ใช้ดึง "ที่อยู่สาขา" (Location), ประเภท, ลูกค้า ฯลฯ
@@ -1213,6 +1228,7 @@ module.exports = {
   getTicketDetailHtml,
   parseTicketDetail,
   getParentPageHtml,
+  parseCurrentJobType,
   getOverviewHtml,
   parseOverviewHtml,
   getInspectorModalHtml,
