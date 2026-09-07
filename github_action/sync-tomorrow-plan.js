@@ -91,9 +91,9 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  // แผนงานสำหรับวันพรุ่งนี้ (computeTomorrowRangeBangkok)
-  const range = rocket.computeTomorrowRangeBangkok();
-  console.log('วันที่นัดหมาย (วันพรุ่งนี้): ' + range.start);
+  // แผนงานชั่วคราว: เปลี่ยนมาเป็นวันนี้ก่อน (computeTodayRangeBangkok)
+  const range = rocket.computeTodayRangeBangkok();
+  console.log('วันที่นัดหมาย (วันนี้ - ชั่วคราว): ' + range.start);
 
   // ==========================================
   // 1. PARENT TICKETS ที่มีนัดหมายวันนี้ (date_type=2)
@@ -159,13 +159,13 @@ async function main() {
         if (rocket.isMatchingDateParts(r.appointment, range.dateParts)) {
           tomorrowTickets.push(r);
         } else {
-          console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (นัดหมาย: "' + (r.appointment || 'ไม่มี') + '" ไม่ใช่วันพรุ่งนี้)');
+          console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (นัดหมาย: "' + (r.appointment || 'ไม่มี') + '" ไม่ใช่วันนี้)');
         }
       }
     });
   }
 
-  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันพรุ่งนี้จริง: ' + tomorrowTickets.length);
+  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันนี้ (ชั่วคราว) จริง: ' + tomorrowTickets.length);
 
   // ==========================================
   // 4. FETCH INSPECTION STATUS & ACTIVE STAGE (ดูการตรวจงาน & Active Stage)
