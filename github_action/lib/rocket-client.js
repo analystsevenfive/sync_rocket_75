@@ -450,7 +450,8 @@ function parseDateTimeBangkok(str) {
 
 
 
-// คำนวณระยะเวลาจาก reportDate ถึง endTime คืนค่าเป็น "ชั่วโมง.นาที" เช่น "61.45"
+// คำนวณระยะเวลาจาก reportDate ถึง endTime คืนค่าเป็นตัวเลขทศนิยม 2 ตำแหน่ง
+// สูตร: Total Hours = ชั่วโมงเต็ม + (นาที / 60) เช่น 32 ชั่วโมง 24 นาที = 32.40
 function computeWorkingTime(reportDateStr, endTimeStr) {
 
   const startMs = parseDateTimeBangkok(reportDateStr);
@@ -467,8 +468,9 @@ function computeWorkingTime(reportDateStr, endTimeStr) {
   const totalMinutes = Math.floor(diffMs / (60 * 1000));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
+  const totalHours = hours + (minutes / 60);
 
-  return hours + '.' + String(minutes).padStart(2, '0');
+  return totalHours.toFixed(2);
 
 }
 
