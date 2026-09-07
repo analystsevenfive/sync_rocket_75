@@ -1,0 +1,43 @@
+name: Yesterday Completed Jobs Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'วันที่นัดหมาย (dd/MM/yyyy) — เว้นว่างไว้ = ใช้วันเมื่อวานตามปกติ'
+        required: false
+        default: ''
+      sheet_name:
+        description: 'ชื่อชีทปลายทาง'
+        required: false
+        default: 'Yesterday’s Completed Jobs Test'
+
+concurrency:
+  group: yesterday-jobs-test
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github_action
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run yesterday completed jobs sync (test)
+        env:
+          ROCKET_USERNAME: ${{ secrets.ROCKET_USERNAME }}
+          ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          YESTERDAY_JOBS_SHEET_NAME_OVERRIDE: ${{ inputs.sheet_name || 'Yesterday’s Completed Jobs Test' }}
+          TARGET_DATE_OVERRIDE: ${{ inputs.target_date }}
+        run: node sync-yesterday-jobs.js

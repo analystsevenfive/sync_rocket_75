@@ -14,7 +14,9 @@
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
-const SHEET_NAME = 'Yesterday’s Completed Jobs';
+// override ได้ผ่าน env var สำหรับรัน test เข้าชีทแยกต่างหาก
+// (เช่น 'Yesterday’s Completed Jobs Test')
+const SHEET_NAME = process.env.YESTERDAY_JOBS_SHEET_NAME_OVERRIDE || 'Yesterday’s Completed Jobs';
 const DATE_TYPE_APPOINTMENT = '2';
 
 const PARENT_CONCURRENCY = 30;
@@ -90,8 +92,19 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const range = rocket.computeYesterdayRangeBangkok();
-  console.log('วันที่นัดหมาย (เมื่อวาน): ' + range.start);
+  let range;
+  if (process.env.TARGET_DATE_OVERRIDE) {
+    const parts = rocket.parseDateParts(process.env.TARGET_DATE_OVERRIDE);
+    if (!parts) {
+      throw new Error('TARGET_DATE_OVERRIDE format ไม่ถูกต้อง (ต้องเป็น dd/MM/yyyy): ' + process.env.TARGET_DATE_OVERRIDE);
+    }
+    const fmtStr = String(parts.day).padStart(2, '0') + '/' + String(parts.month).padStart(2, '0') + '/' + parts.year;
+    range = { start: fmtStr, end: fmtStr, dateParts: parts };
+    console.log('วันที่นัดหมาย (override): ' + range.start);
+  } else {
+    range = rocket.computeYesterdayRangeBangkok();
+    console.log('วันที่นัดหมาย (เมื่อวาน): ' + range.start);
+  }
 
   // ==========================================
   // 1. PARENT TICKETS ที่มีนัดหมาย (date_type=2)
