@@ -94,9 +94,15 @@ async function main() {
 
   let range;
   if (process.env.TARGET_DATE_OVERRIDE) {
-    const parts = rocket.parseDateParts(process.env.TARGET_DATE_OVERRIDE);
+    let rawDate = String(process.env.TARGET_DATE_OVERRIDE).trim();
+    // ถ้าใส่มาแค่ D/M หรือ DD/MM เช่น 3/9 ให้เติมปีปัจจุบันอัตโนมัติ
+    if (/^\d{1,2}[/-]\d{1,2}$/.test(rawDate)) {
+      const nowYear = new Date().getFullYear();
+      rawDate = rawDate + '/' + nowYear;
+    }
+    const parts = rocket.parseDateParts(rawDate);
     if (!parts) {
-      throw new Error('TARGET_DATE_OVERRIDE format ไม่ถูกต้อง (ต้องเป็น dd/MM/yyyy): ' + process.env.TARGET_DATE_OVERRIDE);
+      throw new Error('TARGET_DATE_OVERRIDE format ไม่ถูกต้อง: ' + process.env.TARGET_DATE_OVERRIDE);
     }
     const fmtStr = String(parts.day).padStart(2, '0') + '/' + String(parts.month).padStart(2, '0') + '/' + parts.year;
     range = { start: fmtStr, end: fmtStr, dateParts: parts };
