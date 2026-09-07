@@ -261,8 +261,15 @@ async function main() {
   );
 
   const parentMap = extractParentRowsMap(parentHtml);
-  const parentIds = Object.keys(parentMap);
-  console.log(`PARENT TICKETS งานติดตั้งที่พบ: ${parentIds.length}`);
+  const allParentIds = Object.keys(parentMap);
+  console.log(`PARENT TICKETS งานติดตั้งที่พบทั้งหมด: ${allParentIds.length}`);
+
+  // กรองเฉพาะตั๋วที่เป็น BKIN (Bangkok Installation) ตามเงื่อนไข
+  const parentIds = allParentIds.filter(function(pId) {
+    const tNo = (parentMap[pId] && parentMap[pId].ticketNo) || '';
+    return /^BKIN/i.test(tNo.trim());
+  });
+  console.log(`PARENT TICKETS งานติดตั้งเฉพาะ BKIN: ${parentIds.length}`);
 
   // ==========================================
   // 2. ค้นหา SUB TICKETS จาก checkrepair.php ของแต่ละ parent
@@ -397,6 +404,11 @@ async function main() {
     }
   });
 
+  // กรองตั๋วที่ Ticket No ขึ้นต้นด้วย BKIN เท่านั้นตามเงื่อนไข
+  planItems = planItems.filter(function(item) {
+    return /^BKIN/i.test((item.ticketNo || '').trim());
+  });
+
   // ==========================================
   // 4. เรียงลำดับตามวันนัดหมาย (เช้า -> เย็น) และตามเลขที่ใบงาน
   // ==========================================
@@ -409,7 +421,7 @@ async function main() {
     return (a.ticketNo || '').localeCompare(b.ticketNo || '');
   });
 
-  console.log(`รายการติดตั้งทั้งหมดที่จะบันทึก: ${planItems.length}`);
+  console.log(`รายการติดตั้ง (BKIN) ทั้งหมดที่จะบันทึก: ${planItems.length}`);
   planItems.forEach(p => {
     console.log(`- ${p.ticketNo}: นัด ${p.appointmentDate || '-'} ${p.appointmentTime || '-'} | Loc: ${p.location || '-'} | ${p.customer}`);
   });
