@@ -430,8 +430,9 @@ async function main() {
     return itemToRow(item, lastSync);
   });
 
-  await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, SHEET_NAME, HEADERS, rows);
-  console.log(`เขียนลงชีท '${SHEET_NAME}' สำเร็จ: ${rows.length} แถว`);
+  const summaryText = `ช่วงข้อมูล ${range.start} - ${range.end} | จำนวน ${rows.length.toLocaleString('en-US')} รายการ`;
+  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, SHEET_NAME, summaryText, HEADERS, rows);
+  console.log(`เขียนลงชีท '${SHEET_NAME}' สำเร็จ: ${rows.length} แถว (แถว 1: ${summaryText})`);
   console.log('DONE');
 }
 

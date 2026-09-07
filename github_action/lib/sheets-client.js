@@ -262,6 +262,136 @@ async function replaceSheetData(sheets, spreadsheetId, sheetId, sheetName, heade
 
 
 
+// replaceSheetDataWithSummary: เขียนทับทั้งชีทโดยมีแถว 1 เป็นแถบสรุป (ช่วงข้อมูล + จำนวนรายการ)
+// แถว 2 เป็น header, แถว 3+ เป็นข้อมูลจริง พร้อม Merge, พื้นหลัง #fff2cc, ตัวหนา, และ Freeze 2 แถว
+async function replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, sheetName, summaryText, headers, rows) {
+
+  const lastCol = columnLetter(headers.length);
+
+  // 1. ตรวจสอบและขยายขนาด grid
+  const requiredRows = Math.max(rows.length + 50, 100);
+  await ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows);
+
+  // 2. ล้างข้อมูลเก่าทั้งหมดตั้งแต่แถว 1 ลงไป
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: spreadsheetId,
+    range: "'" + sheetName + "'!A1:" + lastCol
+  });
+
+  // 3. เขียนแถว 1 (ช่วงข้อมูล) และแถว 2 (หัวตาราง)
+  const writeData = [
+    {
+      range: "'" + sheetName + "'!A1",
+      values: [[summaryText]]
+    },
+    {
+      range: "'" + sheetName + "'!A2:" + lastCol + '2',
+      values: [headers]
+    }
+  ];
+
+  // 4. เขียนแถวข้อมูลตั้งแต่แถว 3
+  if (rows.length > 0) {
+    const rowValues = rows.map(function(r) {
+      return Array.isArray(r) ? r : (r.row || r);
+    });
+    writeData.push({
+      range: "'" + sheetName + "'!A3:" + lastCol + (rows.length + 2),
+      values: rowValues
+    });
+  }
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: spreadsheetId,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: writeData
+    }
+  });
+
+  // 5. จัด Format แถว 1 (Merge, สีพื้นหลัง #fff2cc, ตัวหนา, Freeze 2 แถวแรก)
+  if (sheetId !== null && sheetId !== undefined) {
+    try {
+      try {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: spreadsheetId,
+          requestBody: {
+            requests: [{
+              unmergeCells: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: headers.length
+                }
+              }
+            }]
+          }
+        });
+      } catch (e) {
+        // ignore unmerge error
+      }
+
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              mergeCells: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: headers.length
+                },
+                mergeType: 'MERGE_ALL'
+              }
+            },
+            {
+              repeatCell: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: headers.length
+                },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor: { red: 1.0, green: 0.949, blue: 0.8 }, // #fff2cc
+                    textFormat: { bold: true },
+                    horizontalAlignment: 'LEFT',
+                    verticalAlignment: 'MIDDLE'
+                  }
+                },
+                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)'
+              }
+            },
+            {
+              updateSheetProperties: {
+                properties: {
+                  sheetId: sheetId,
+                  gridProperties: {
+                    frozenRowCount: 2
+                  }
+                },
+                fields: 'gridProperties.frozenRowCount'
+              }
+            }
+          ]
+        }
+      });
+    } catch (e) {
+      console.log('จัด Format แถว 1/Freeze:', e.message);
+    }
+  }
+
+}
+
+
+
 // pruneStaleRows: ลบแถวที่ key ไม่อยู่ใน validKeys ชุด
 // ล่าสุด — รวมแถวติดกันเป็นช่วงต่อเนื่องแล้วยิง
 // batchUpdate (spreadsheets.batchUpdate ไม่ใช่ values.
@@ -432,6 +562,7 @@ module.exports = {
   ensureGridSize,
   batchUpsert,
   replaceSheetData,
+  replaceSheetDataWithSummary,
   getClosedIdsFromSheet,
   getIdToValueMap,
   pruneStaleRows
