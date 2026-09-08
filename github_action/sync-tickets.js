@@ -19,8 +19,9 @@ const INSPECTOR_CONCURRENCY = 25;
 const PRODUCT_CONCURRENCY = 20;
 
 const TICKET_HEADERS = [
+  'Inspection Status', 'Sales Invoice No.',
   'Ticket ID', 'Parent Ticket ID', 'Parent Ticket No', 'Ticket No', 'Status', 'Appointment',
-  'Report Date', 'Inspection Status', 'Sales Invoice No.', 'Customer', 'Branch', 'Contact', 'Phone',
+  'Report Date', 'Customer', 'Branch', 'Contact', 'Phone',
   'Problem Reported', 'Work Description', 'Special Condition', 'Note', 'Machine Location',
   'Product Code', 'Product Name', 'Power Type', 'Serial', 'Warranty',
   'Start Time', 'End Time', 'Duration Min', 'Time Recorder',
@@ -29,7 +30,7 @@ const TICKET_HEADERS = [
   'URL', 'Last Sync'
 ];
 
-const TICKET_ID_COL = 1;
+const TICKET_ID_COL = TICKET_HEADERS.indexOf('Ticket ID') + 1; // 3
 const REPAIR_RESULT_COL = TICKET_HEADERS.indexOf('Repair Result') + 1; // 28
 
 
@@ -48,9 +49,9 @@ function forceTextIfNumeric(value) {
 
 function ticketToRow(d, lastSync) {
   return [
+    d.inspectionStatus || '', forceTextIfNumeric(d.salesInvoiceNo),
     d.ticketId, d.parentTicketId, d.parentTicketNo, d.ticketNo, d.status, d.appointment,
-    d.reportDate, d.inspectionStatus || '', forceTextIfNumeric(d.salesInvoiceNo),
-    d.customer, d.branch, d.contact, forceTextIfNumeric(d.phone),
+    d.reportDate, d.customer, d.branch, d.contact, forceTextIfNumeric(d.phone),
     d.problem, d.workDescription, d.specialCondition, d.note, d.machineLocation,
     d.productCode, d.productName, d.powerType, d.serial, d.warranty,
     d.startTime, d.endTime, d.duration, d.timeRecorder,
@@ -136,9 +137,9 @@ async function main() {
   // ==========================================
 
   const summaryText = 'ช่วงข้อมูล ' + range.start + ' - ' + range.end + ' | จำนวน ' + subIds.length.toLocaleString('en-US') + ' รายการ';
-  // newColIndex1Based = 8 ('Inspection Status'), numNewCols = 2 ('Inspection Status', 'Sales Invoice No.')
+  // newColIndex1Based = 1 ('Inspection Status'), numNewCols = 2 ('Inspection Status', 'Sales Invoice No.')
   await sheetsLib.ensureSheetWithSummaryAndBuildIndex(
-    sheets, spreadsheetId, sheetId, TICKETS_SHEET_NAME, summaryText, TICKET_HEADERS, TICKET_ID_COL, 8, 2
+    sheets, spreadsheetId, sheetId, TICKETS_SHEET_NAME, summaryText, TICKET_HEADERS, TICKET_ID_COL, 1, 2
   );
 
   // ==========================================

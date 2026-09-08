@@ -23,9 +23,9 @@ const SUB_CONCURRENCY = 30;
 
 // ตำแหน่งคอลัมน์ใน "Tickets" (ต้องตรงกับ
 // TICKET_HEADERS ใน sync-tickets.js เสมอ)
-const TICKETS_TICKET_ID_COL = 1;
-const TICKETS_TICKET_NO_COL = 4;
-const TICKETS_REPAIR_RESULT_COL = 28; // จากเดิม 26 ปรับเป็น 28 เพราะเพิ่ม Inspection Status และ Sales Invoice No.
+const TICKETS_TICKET_ID_COL = 3; // Column C: Ticket ID (เดิม 1 เลื่อนไป 3 เพราะมี Inspection Status, Sales Invoice No. อยู่คอลัมน์ A, B)
+const TICKETS_TICKET_NO_COL = 6; // Column F: Ticket No (เดิม 4 เลื่อนไป 6)
+const TICKETS_REPAIR_RESULT_COL = 28; // Column AB: Repair Result (เดิม 26 ปรับเป็น 28)
 
 const TRICK2_HEADERS = [
   'Received Date', 'Work Order No.', 'Job No. (BK)', 'Customer Name', 'Technician Name',

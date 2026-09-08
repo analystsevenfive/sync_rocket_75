@@ -128,7 +128,7 @@ async function ensureSheetWithSummaryAndBuildIndex(
       range: "'" + sheetName + "'!A1"
     });
     const a1Val = (a1Check.data.values && a1Check.data.values[0] && a1Check.data.values[0][0]) || '';
-    if (a1Val === headers[0]) {
+    if (a1Val === 'Ticket ID' || a1Val === headers[0] || (a1Val && a1Val.indexOf('Ticket') !== -1)) {
       console.log('พบ Header อยู่ที่แถว 1 — กำลังแทรกแถวบนสุดเพื่อให้เป็นแถวสรุป...');
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: spreadsheetId,
