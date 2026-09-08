@@ -367,7 +367,7 @@ async function getTrick2TechniciansMap(sheets, spreadsheetId) {
     for (const row of rows) {
       const ticketNo = String(row[0] || '').trim();
       const allTechs = String(row[2] || '').trim();
-      if (ticketNo && allTechs) {
+      if (ticketNo && allTechs && ticketNo !== 'Job No. (BK)' && !ticketNo.startsWith('ช่วงข้อมูล')) {
         map[ticketNo] = allTechs;
         const parentNo = ticketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
         if (parentNo && !map[parentNo]) {
