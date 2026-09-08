@@ -36,8 +36,6 @@ const STAGE_HEADERS = [
   'Job No.', 'Overall Status', 'Current Job Type', 'Active Stages', 'Current Stage', 'Rocket URL', 'Last Sync'
 ];
 
-const JOBNO_COL = 1;
-
 
 
 /*************************************************
@@ -316,7 +314,7 @@ async function main() {
     if (r && r.__error) {
       console.log('ERROR Parent ' + targetParentIds[i] + ': ' + r.__error);
     } else if (r) {
-      rows.push({ key: String(r.jobNo), row: stageToRow(r, lastSync) });
+      rows.push(stageToRow(r, lastSync));
     }
   });
 
@@ -326,19 +324,12 @@ async function main() {
   }
   const sheets = await sheetsLib.getSheetsClient();
 
-  // ต่างจาก SpreadsheetApp — Sheets API ไม่สร้างแท็บ
-  // ใหม่ให้อัตโนมัติ ต้องเช็ค+สร้างเองก่อนเสมอ
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, STAGE_SHEET_NAME);
 
-  // กัน error "exceeds grid limits" ถ้าจำนวน parent ticket
-  // เกิน grid ปัจจุบันของชีทนี้ (ensureGridSize มี retry+รอ
-  // สั้นๆ ในตัวอยู่แล้วเผื่อ eventual consistency ของ Sheets API)
-  await sheetsLib.ensureGridSize(sheets, spreadsheetId, sheetId, targetParentIds.length + 1000);
+  const summaryText = 'ช่วงข้อมูล ' + range.start + ' - ' + range.end + ' | จำนวน ' + rows.length.toLocaleString('en-US') + ' รายการ';
+  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, STAGE_SHEET_NAME, summaryText, STAGE_HEADERS, rows);
 
-  const ctx = await sheetsLib.ensureSheetAndBuildIndex(sheets, spreadsheetId, STAGE_SHEET_NAME, STAGE_HEADERS, JOBNO_COL);
-  await sheetsLib.batchUpsert(sheets, spreadsheetId, sheetId, STAGE_SHEET_NAME, STAGE_HEADERS, ctx, rows);
-
-  console.log('เขียนแล้ว ' + rows.length + '/' + targetParentIds.length);
+  console.log('เขียนลงชีท \'' + STAGE_SHEET_NAME + '\' สำเร็จ: ' + rows.length + ' แถว (' + summaryText + ')');
   console.log('DONE');
 
 }
