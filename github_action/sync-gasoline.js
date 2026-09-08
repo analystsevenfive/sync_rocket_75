@@ -312,7 +312,7 @@ async function getTicketNoToUrlMap(sheets, spreadsheetId) {
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId,
-    range: "'" + TICKETS_SHEET_NAME + "'!A1:AH"
+    range: "'" + TICKETS_SHEET_NAME + "'!A1:AJ"
   });
 
   const values = res.data.values || [];
@@ -320,14 +320,20 @@ async function getTicketNoToUrlMap(sheets, spreadsheetId) {
     return {};
   }
 
-  const headers = values[0];
+  let headers = values[0];
+  let dataStartIndex = 1;
+  if (headers && headers[0] && String(headers[0]).startsWith('ช่วงข้อมูล')) {
+    headers = values[1] || [];
+    dataStartIndex = 2;
+  }
+
   const ticketNoCol = headers.indexOf('Ticket No');
   const parentTicketNoCol = headers.indexOf('Parent Ticket No');
   const urlCol = headers.indexOf('URL');
 
   const map = {};
 
-  for (let i = 1; i < values.length; i++) {
+  for (let i = dataStartIndex; i < values.length; i++) {
     const row = values[i];
     const ticketNo = row[ticketNoCol];
     const url = (row[urlCol] || '').trim();

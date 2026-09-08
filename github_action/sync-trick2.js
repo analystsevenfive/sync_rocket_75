@@ -25,7 +25,7 @@ const SUB_CONCURRENCY = 30;
 // TICKET_HEADERS ใน sync-tickets.js เสมอ)
 const TICKETS_TICKET_ID_COL = 1;
 const TICKETS_TICKET_NO_COL = 4;
-const TICKETS_REPAIR_RESULT_COL = 26;
+const TICKETS_REPAIR_RESULT_COL = 28; // จากเดิม 26 ปรับเป็น 28 เพราะเพิ่ม Inspection Status และ Sales Invoice No.
 
 const TRICK2_HEADERS = [
   'Received Date', 'Work Order No.', 'Job No. (BK)', 'Customer Name', 'Technician Name',
@@ -118,7 +118,7 @@ async function main() {
   // ==========================================
 
   const idToTicketNoMap = await sheetsLib.getIdToValueMap(
-    sheets, spreadsheetId, TICKETS_SHEET_NAME, TICKETS_TICKET_ID_COL, TICKETS_TICKET_NO_COL
+    sheets, spreadsheetId, TICKETS_SHEET_NAME, TICKETS_TICKET_ID_COL, TICKETS_TICKET_NO_COL, 3
   );
 
   const validTicketNos = new Set();
@@ -173,7 +173,7 @@ async function main() {
 
   const closedIds = await sheetsLib.getClosedIdsFromSheet(
     sheets, spreadsheetId, TICKETS_SHEET_NAME,
-    TICKETS_TICKET_ID_COL, TICKETS_REPAIR_RESULT_COL, CLOSED_REPAIR_RESULT
+    TICKETS_TICKET_ID_COL, TICKETS_REPAIR_RESULT_COL, CLOSED_REPAIR_RESULT, 3
   );
 
   const pendingSubs = subIds.filter(function(id) {

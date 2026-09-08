@@ -111,6 +111,204 @@ async function ensureSheetAndBuildIndex(sheets, spreadsheetId, sheetName, header
 
 
 
+// ensureSheetWithSummaryAndBuildIndex:
+// สำหรับชีทที่มีแถว 1 เป็นแถบสรุป (ช่วงข้อมูล + จำนวนรายการ)
+// แถว 2 เป็น header และแถว 3+ เป็นข้อมูลจริง พร้อม index keyCol เริ่มจากแถว 3
+async function ensureSheetWithSummaryAndBuildIndex(
+  sheets, spreadsheetId, sheetId, sheetName, summaryText, headers, keyColIndex1Based, newColIndex1Based = null, numNewCols = 0
+) {
+
+  const lastCol = columnLetter(headers.length);
+
+  // 1. ตรวจสอบว่าแถว 1 ปัจจุบันเป็น Header เดิม (เช่น 'Ticket ID') หรือไม่
+  // ถ้าใช่ แปลว่าชีทยังไม่เคยมีแถวสรุป -> ให้แทรก 1 แถวไว้บนสุด เพื่อเลื่อน Header ไปแถว 2
+  try {
+    const a1Check = await sheets.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId,
+      range: "'" + sheetName + "'!A1"
+    });
+    const a1Val = (a1Check.data.values && a1Check.data.values[0] && a1Check.data.values[0][0]) || '';
+    if (a1Val === headers[0]) {
+      console.log('พบ Header อยู่ที่แถว 1 — กำลังแทรกแถวบนสุดเพื่อให้เป็นแถวสรุป...');
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: spreadsheetId,
+        requestBody: {
+          requests: [{
+            insertDimension: {
+              range: {
+                sheetId: sheetId,
+                dimension: 'ROWS',
+                startIndex: 0,
+                endIndex: 1
+              },
+              inheritFromBefore: false
+            }
+          }]
+        }
+      });
+    }
+  } catch (e) {
+    console.log('ตรวจแถว 1:', e.message);
+  }
+
+  // 2. ตรวจสอบการแทรกคอลัมน์ใหม่ (ถ้ามีการระบุ newColIndex1Based เช่น คอลัมน์ที่ 8 'Inspection Status')
+  if (newColIndex1Based && numNewCols > 0) {
+    try {
+      const checkColLetter = columnLetter(newColIndex1Based);
+      const colCheck = await sheets.spreadsheets.values.get({
+        spreadsheetId: spreadsheetId,
+        range: "'" + sheetName + "'!" + checkColLetter + '2'
+      });
+      const colVal = (colCheck.data.values && colCheck.data.values[0] && colCheck.data.values[0][0]) || '';
+      if (colVal && colVal !== headers[newColIndex1Based - 1]) {
+        console.log(`พบตำแหน่งคอลัมน์ ${checkColLetter} เป็น '${colVal}' (ยังไม่แทรกคอลัมน์ใหม่) — กำลังแทรก ${numNewCols} คอลัมน์...`);
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: spreadsheetId,
+          requestBody: {
+            requests: [{
+              insertDimension: {
+                range: {
+                  sheetId: sheetId,
+                  dimension: 'COLUMNS',
+                  startIndex: newColIndex1Based - 1,
+                  endIndex: newColIndex1Based - 1 + numNewCols
+                },
+                inheritFromBefore: false
+              }
+            }]
+          }
+        });
+      }
+    } catch (e) {
+      console.log('ตรวจคอลัมน์ใหม่:', e.message);
+    }
+  }
+
+  // 3. เขียนแถว 1 (ช่วงข้อมูล) และแถว 2 (หัวตาราง)
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: spreadsheetId,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: [
+        {
+          range: "'" + sheetName + "'!A1",
+          values: [[summaryText]]
+        },
+        {
+          range: "'" + sheetName + "'!A2:" + lastCol + '2',
+          values: [headers]
+        }
+      ]
+    }
+  });
+
+  // 4. จัด Format แถว 1 (Merge, สีพื้นหลัง #fff2cc, ตัวหนา, Freeze 2 แถวแรก)
+  if (sheetId !== null && sheetId !== undefined) {
+    try {
+      try {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: spreadsheetId,
+          requestBody: {
+            requests: [{
+              unmergeCells: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: headers.length
+                }
+              }
+            }]
+          }
+        });
+      } catch (e) {}
+
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              mergeCells: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: headers.length
+                },
+                mergeType: 'MERGE_ALL'
+              }
+            },
+            {
+              repeatCell: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: 0,
+                  endColumnIndex: headers.length
+                },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor: { red: 1.0, green: 0.949, blue: 0.8 }, // #fff2cc
+                    textFormat: { bold: true },
+                    horizontalAlignment: 'LEFT',
+                    verticalAlignment: 'MIDDLE'
+                  }
+                },
+                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)'
+              }
+            },
+            {
+              updateSheetProperties: {
+                properties: {
+                  sheetId: sheetId,
+                  gridProperties: {
+                    frozenRowCount: 2
+                  }
+                },
+                fields: 'gridProperties.frozenRowCount'
+              }
+            }
+          ]
+        }
+      });
+    } catch (e) {
+      console.log('จัด Format แถว 1/Freeze:', e.message);
+    }
+  }
+
+  // 5. สร้าง Index เริ่มจากแถว 3
+  return buildSummarySheetIndex(sheets, spreadsheetId, sheetName, keyColIndex1Based);
+
+}
+
+
+
+async function buildSummarySheetIndex(sheets, spreadsheetId, sheetName, keyColIndex1Based) {
+
+  const keyCol = columnLetter(keyColIndex1Based);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: spreadsheetId,
+    range: "'" + sheetName + "'!" + keyCol + '3:' + keyCol
+  });
+
+  const values = res.data.values || [];
+  const index = {};
+
+  values.forEach(function(row, i) {
+    if (row[0]) {
+      index[String(row[0])] = i + 3;
+    }
+  });
+
+  return { index: index, lastRow: values.length + 2 };
+
+}
+
+
+
 // ต่างจาก SpreadsheetApp ที่ setValues/appendRow ขยายจำนวน
 // แถวของ grid ให้อัตโนมัติเวลาข้อมูลเกินขนาดปัจจุบัน —
 // values.batchUpdate ของ Sheets API ไม่ขยายให้ ถ้า range
@@ -396,13 +594,13 @@ async function replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, sheet
 // ล่าสุด — รวมแถวติดกันเป็นช่วงต่อเนื่องแล้วยิง
 // batchUpdate (spreadsheets.batchUpdate ไม่ใช่ values.
 // batchUpdate) ครั้งเดียวจบเหมือนที่แก้ไว้ใน trick.js
-async function pruneStaleRows(sheets, spreadsheetId, sheetId, sheetName, keyColIndex1Based, validKeys) {
+async function pruneStaleRows(sheets, spreadsheetId, sheetId, sheetName, keyColIndex1Based, validKeys, startRow = 2) {
 
   const keyCol = columnLetter(keyColIndex1Based);
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!" + keyCol + '2:' + keyCol
+    range: "'" + sheetName + "'!" + keyCol + startRow + ':' + keyCol
   });
 
   const values = res.data.values || [];
@@ -410,8 +608,11 @@ async function pruneStaleRows(sheets, spreadsheetId, sheetId, sheetName, keyColI
 
   values.forEach(function(row, i) {
     const key = row[0];
-    if (key && !validKeys.has(String(key))) {
-      rowsToDelete.push(i + 2);
+    if (!key || key === 'Ticket ID' || key === 'Ticket No' || String(key).startsWith('ช่วงข้อมูล')) {
+      return;
+    }
+    if (!validKeys.has(String(key))) {
+      rowsToDelete.push(i + startRow);
     }
   });
 
@@ -465,7 +666,7 @@ async function pruneStaleRows(sheets, spreadsheetId, sheetId, sheetName, keyColI
 // อ่านคอลัมน์ id + repairResult จากชีทที่กำหนด คืน Set
 // ของ id ที่ปิดงานแล้ว (เหมือน getClosedSubTicketIds_
 // ใน trick.js เดิม)
-async function getClosedIdsFromSheet(sheets, spreadsheetId, sheetName, idColIndex1Based, repairResultColIndex1Based, closedValue) {
+async function getClosedIdsFromSheet(sheets, spreadsheetId, sheetName, idColIndex1Based, repairResultColIndex1Based, closedValue, startRow = 2) {
 
   const closed = new Set();
 
@@ -481,11 +682,11 @@ async function getClosedIdsFromSheet(sheets, spreadsheetId, sheetName, idColInde
   try {
     idsRes = await sheets.spreadsheets.values.get({
       spreadsheetId: spreadsheetId,
-      range: "'" + sheetName + "'!" + idCol + '2:' + idCol
+      range: "'" + sheetName + "'!" + idCol + startRow + ':' + idCol
     });
     repairRes = await sheets.spreadsheets.values.get({
       spreadsheetId: spreadsheetId,
-      range: "'" + sheetName + "'!" + repairCol + '2:' + repairCol
+      range: "'" + sheetName + "'!" + repairCol + startRow + ':' + repairCol
     });
   } catch (e) {
     return closed;
@@ -497,7 +698,10 @@ async function getClosedIdsFromSheet(sheets, spreadsheetId, sheetName, idColInde
   ids.forEach(function(row, i) {
     const id = row[0];
     const repairResult = repairResults[i] && repairResults[i][0];
-    if (id && repairResult === closedValue) {
+    if (!id || id === 'Ticket ID' || String(id).startsWith('ช่วงข้อมูล')) {
+      return;
+    }
+    if (repairResult === closedValue) {
       closed.add(String(id));
     }
   });
@@ -514,7 +718,7 @@ async function getClosedIdsFromSheet(sheets, spreadsheetId, sheetName, idColInde
 // Ticket No สำหรับ prune โดยไม่ต้อง fetch รายละเอียดตั๋ว
 // ทุกใบซ้ำ (ใช้ของที่ sync-tickets.js เก็บไว้แล้วในชีท
 // Tickets แทน)
-async function getIdToValueMap(sheets, spreadsheetId, sheetName, idColIndex1Based, valueColIndex1Based) {
+async function getIdToValueMap(sheets, spreadsheetId, sheetName, idColIndex1Based, valueColIndex1Based, startRow = 2) {
 
   const map = {};
 
@@ -526,11 +730,11 @@ async function getIdToValueMap(sheets, spreadsheetId, sheetName, idColIndex1Base
   try {
     idsRes = await sheets.spreadsheets.values.get({
       spreadsheetId: spreadsheetId,
-      range: "'" + sheetName + "'!" + idCol + '2:' + idCol
+      range: "'" + sheetName + "'!" + idCol + startRow + ':' + idCol
     });
     valuesRes = await sheets.spreadsheets.values.get({
       spreadsheetId: spreadsheetId,
-      range: "'" + sheetName + "'!" + valueCol + '2:' + valueCol
+      range: "'" + sheetName + "'!" + valueCol + startRow + ':' + valueCol
     });
   } catch (e) {
     return map;
@@ -542,7 +746,10 @@ async function getIdToValueMap(sheets, spreadsheetId, sheetName, idColIndex1Base
   ids.forEach(function(row, i) {
     const id = row[0];
     const value = values[i] && values[i][0];
-    if (id && value) {
+    if (!id || id === 'Ticket ID' || String(id).startsWith('ช่วงข้อมูล')) {
+      return;
+    }
+    if (value) {
       map[String(id)] = String(value);
     }
   });
@@ -559,6 +766,8 @@ module.exports = {
   getSheetIdByName,
   ensureSheetExists,
   ensureSheetAndBuildIndex,
+  ensureSheetWithSummaryAndBuildIndex,
+  buildSummarySheetIndex,
   ensureGridSize,
   batchUpsert,
   replaceSheetData,
