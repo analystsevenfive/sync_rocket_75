@@ -579,39 +579,19 @@ function extractParentToCustomerCodeMap(html) {
 
   const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
-  let logged = false;
   while ((rowMatch = rowRegex.exec(html)) !== null) {
     const rHtml = rowMatch[1];
     const pMatch = rHtml.match(/ticket_view\.php\?id=(\d+)/i);
     if (!pMatch) continue;
     const parentId = pMatch[1];
 
-    if (!logged) {
-      console.log('--- SAMPLE PARENT ROW HTML ---');
-      console.log(rHtml);
-      console.log('--- END SAMPLE PARENT ROW HTML ---');
-      logged = true;
-    }
+    const ticketNoMatch = rHtml.match(/([A-Z]{2,4}[0-9]{4}-[0-9]+)/i);
+    const parentTicketNo = ticketNoMatch ? ticketNoMatch[1] : '';
 
-    const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    const cells = [];
-    let cm;
-    while ((cm = cellRegex.exec(rHtml)) !== null) {
-      cells.push(cm[1]);
-    }
-
-    // Col 0: Ticket No (เช่น BKRM0926-000173)
-    const col0Text = cleanText(cells[0] || '');
-    const ticketNoMatch = col0Text.match(/([A-Z0-9-]+\.[A-Z0-9]+|[A-Z]{2,4}[0-9]{4}-[0-9]+)/i);
-    const parentTicketNo = ticketNoMatch ? ticketNoMatch[1] : col0Text.split(/\s+/)[0];
-
-    // Col 2: ลูกค้า (มีไอคอน 👤 : ด2005-0252)
-    const col2Raw = cells[2] || rHtml;
     let customerCode = '';
-    const userMatch = col2Raw.match(/<i[^>]*class=["'][^"']*fa-user[^"']*["'][^>]*>(?:<\/i>)?\s*:?\s*([^<\n\r]+)/i) ||
-                      col2Raw.match(/<label[^>]*>[\s\S]*?fa-user[\s\S]*?<\/i>\s*:?\s*([^<\n\r]+)<\/label>/i) ||
-                      col2Raw.match(/fa-user[\s\S]*?[:：]\s*([^<\n\r]+)/i) ||
-                      col2Raw.match(/(?:👤|&#128100;|&#x1F464;)[^:]*[:：]\s*([^<\n\r]+)/i);
+    const userMatch = rHtml.match(/fa-user[\s\S]*?<\/i>\s*[:：]\s*([^<\n\r]+)/i) ||
+                      rHtml.match(/fa-user[\s\S]*?[:：]\s*([^<\n\r]+)/i) ||
+                      rHtml.match(/(?:👤|&#128100;|&#x1F464;)[^:]*[:：]\s*([^<\n\r]+)/i);
     if (userMatch) {
       customerCode = cleanText(userMatch[1]).replace(/^[^:]*[:：]\s*/, '').replace(/<\/[^>]+>/g, '').trim();
     }
