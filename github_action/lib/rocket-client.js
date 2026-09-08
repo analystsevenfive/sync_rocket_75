@@ -181,13 +181,13 @@ function computeLast3MonthsRangeBangkok() {
   const now = bangkokDateParts(new Date());
   const end = fmt(now.year, now.month, now.day);
 
-  // ใช้ Date object คำนวณ overflow เดือน/ปีให้อัตโนมัติ
-  // (เช่นเดือน 1 - 3 เดือน = ปีก่อนหน้า เดือน 10-12)
-  const threeMonthsAgo = new Date(now.year, now.month - 1 - 3, now.day);
+  // นับ 3 เดือนปฏิทินล่าสุด: เดือนปัจจุบัน + ย้อนหลัง 2 เดือน โดยเริ่มตั้งแต่วันที่ 1 ของเดือนนั้น
+  // เช่น ปัจจุบันเดือน 9 (กันยายน) -> ย้อนหลัง 2 เดือนคือเดือน 7 (กรกฎาคม) -> start: 01/07/2026
+  const twoMonthsAgo = new Date(now.year, now.month - 1 - 2, 1);
   const start = fmt(
-    threeMonthsAgo.getFullYear(),
-    threeMonthsAgo.getMonth() + 1,
-    threeMonthsAgo.getDate()
+    twoMonthsAgo.getFullYear(),
+    twoMonthsAgo.getMonth() + 1,
+    1
   );
 
   return { start: start, end: end };
