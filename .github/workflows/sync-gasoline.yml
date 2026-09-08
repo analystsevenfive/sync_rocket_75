@@ -2,6 +2,15 @@ name: Sync Gasoline Detail
 
 on:
   workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันที่ 1 ของเดือนปัจจุบัน'
+        required: false
+        default: ''
+      end_date:
+        description: 'End date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันนี้'
+        required: false
+        default: ''
   schedule:
     # 06:05 เวลาไทย (UTC+7) = 23:05 UTC ของวันก่อนหน้า — วันละครั้ง
     - cron: '5 23 * * *'
@@ -32,4 +41,6 @@ jobs:
           ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GASOLINE_START_DATE: ${{ inputs.start_date }}
+          GASOLINE_END_DATE: ${{ inputs.end_date }}
         run: node sync-gasoline.js

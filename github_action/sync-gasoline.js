@@ -31,13 +31,10 @@ const TICKETS_SHEET_NAME = 'Tickets';
 const GASOLINE_SHEET_NAME = 'Gasoline Detail';
 const RATE_PER_JOB = 80;
 
-const GASOLINE_WINDOW_DAYS = 30;
-
-// เดิม hardcode วันที่ไว้ตายตัว ('30/07/2026'-'29/08/2026')
-// ใช้ทดสอบครั้งแรกได้ แต่ตั้ง cron รันทุกชั่วโมงไม่ได้
-// เพราะช่วงวันที่จะไม่ขยับตามเวลาจริงเลย — เปลี่ยนเป็น
-// rolling N วันล่าสุด (ตามเวลากรุงเทพ) แทน
-function computeRollingRangeBangkok(daysBack) {
+// ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 1 ของเดือนปัจจุบันเสมอ (01/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
+// เพื่อให้ข้อมูลทั้งเดือนถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ
+// รองรับ override ผ่าน environment variables (GASOLINE_START_DATE, GASOLINE_END_DATE) สำหรับยิงย้อนหลัง
+function computeDateRange(startOverride, endOverride) {
 
   function bangkokDateParts(date) {
     const parts = new Intl.DateTimeFormat('en-US', {
@@ -55,10 +52,19 @@ function computeRollingRangeBangkok(daysBack) {
   }
 
   const now = bangkokDateParts(new Date());
-  const end = fmt(now.year, now.month, now.day);
 
-  const startDate = new Date(now.year, now.month - 1, now.day - daysBack);
-  const start = fmt(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate());
+  let start = (startOverride || '').trim();
+  let end = (endOverride || '').trim();
+
+  // ถ้าไม่ระบุ start_date -> ใช้วันที่ 1 ของเดือนปัจจุบันเสมอ (ตามเวลากรุงเทพ)
+  if (!start) {
+    start = fmt(now.year, now.month, 1);
+  }
+
+  // ถ้าไม่ระบุ end_date -> ใช้วันนี้ (ตามเวลากรุงเทพ)
+  if (!end) {
+    end = fmt(now.year, now.month, now.day);
+  }
 
   return { start: start, end: end };
 
@@ -233,6 +239,11 @@ function extractGasolineTeamRows(xlsxBuffer) {
 
   if (headerRowIndex === -1) {
     throw new Error('ไม่เจอแถว header ("วันที่ถึงหน้างาน") ในรายงานนี้ — โครงสร้างอาจเปลี่ยนไป');
+  }
+
+  // บันทึกช่วงวันที่ที่ระบุในไฟล์ Excel ของ Rocket75 (แถว 2 ก่อนหน้าหัวตาราง)
+  if (headerRowIndex >= 2 && rows[headerRowIndex - 2] && rows[headerRowIndex - 2][0]) {
+    console.log('ช่วงวันที่ในรายงานจาก Rocket: ' + String(rows[headerRowIndex - 2][0]).trim());
   }
 
   const teamNameRow = rows[headerRowIndex - 1];
@@ -1162,7 +1173,7 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const range = computeRollingRangeBangkok(GASOLINE_WINDOW_DAYS);
+  const range = computeDateRange(process.env.GASOLINE_START_DATE, process.env.GASOLINE_END_DATE);
   console.log('ช่วงวันที่: ' + range.start + ' - ' + range.end);
 
   let rows = [];
