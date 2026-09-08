@@ -579,11 +579,19 @@ function extractParentToCustomerCodeMap(html) {
 
   const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
+  let logged = false;
   while ((rowMatch = rowRegex.exec(html)) !== null) {
     const rHtml = rowMatch[1];
     const pMatch = rHtml.match(/ticket_view\.php\?id=(\d+)/i);
     if (!pMatch) continue;
     const parentId = pMatch[1];
+
+    if (!logged) {
+      console.log('--- SAMPLE PARENT ROW HTML ---');
+      console.log(rHtml);
+      console.log('--- END SAMPLE PARENT ROW HTML ---');
+      logged = true;
+    }
 
     const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     const cells = [];
