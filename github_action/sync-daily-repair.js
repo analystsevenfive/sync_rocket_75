@@ -32,6 +32,7 @@ const HEADERS = [
   'Sales Invoice No.',
   'Customer',
   'Branch',
+  'Customer Code',
   'Contact',
   'Phone',
   'Problem Reported',
@@ -67,6 +68,7 @@ function jobToRow(d, lastSync) {
     forceTextIfNumeric(d.salesInvoiceNo),
     d.customer,
     d.branch,
+    forceTextIfNumeric(d.customerCode),
     d.contact,
     forceTextIfNumeric(d.phone),
     d.problem,
@@ -98,7 +100,8 @@ async function main() {
   const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, DATE_TYPE_APPOINTMENT);
   const parentIds = rocket.extractParentTicketIds(parentHtml);
   const parentToProductMap = rocket.extractParentToProductIdMap(parentHtml);
-  console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length + ' (แมป Product ID ได้: ' + Object.keys(parentToProductMap).length + ')');
+  const parentToCustomerCodeMap = rocket.extractParentToCustomerCodeMap(parentHtml);
+  console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length + ' (แมป Product ID ได้: ' + Object.keys(parentToProductMap).length + ', Customer Code ได้: ' + Object.keys(parentToCustomerCodeMap).length + ')');
 
   // ==========================================
   // 2. CANDIDATE SUB TICKETS + ช่าง/ทีม ต่อ parent
@@ -162,6 +165,14 @@ async function main() {
   }
 
   console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันนี้จริง: ' + todayTickets.length);
+
+  todayTickets.forEach(function(t) {
+    const parentNo = (t.parentTicketNo || (t.ticketNo ? t.ticketNo.replace(/\.[A-Z0-9]+$/i, '') : '')).trim();
+    t.customerCode = t.customerCode ||
+                     parentToCustomerCodeMap[String(t.parentTicketId)] ||
+                     parentToCustomerCodeMap[parentNo] ||
+                     '';
+  });
 
   // ==========================================
   // 4. FETCH INSPECTION STATUS, ACTIVE STAGE & SALES INVOICE (ดูการตรวจงาน, Active Stage & เลขที่บิลขาย)
