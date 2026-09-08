@@ -2,9 +2,9 @@ name: Sync Ticket Stage
 
 on:
   workflow_dispatch:
-  schedule:
-    # 05:50 เวลาไทย (UTC+7) = 22:50 UTC ของวันก่อนหน้า — วันละครั้ง
-    - cron: '50 22 * * *'
+  # schedule:
+  #   # 05:50 เวลาไทย (UTC+7) = 22:50 UTC ของวันก่อนหน้า — วันละครั้ง
+  #   - cron: '50 22 * * *'
 
 concurrency:
   group: sync-ticket-stage

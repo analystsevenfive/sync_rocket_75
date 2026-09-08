@@ -11,9 +11,9 @@ on:
         description: 'End date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันนี้'
         required: false
         default: ''
-  schedule:
-    # 06:05 เวลาไทย (UTC+7) = 23:05 UTC ของวันก่อนหน้า — วันละครั้ง
-    - cron: '5 23 * * *'
+  # schedule:
+  #   # 06:05 เวลาไทย (UTC+7) = 23:05 UTC ของวันก่อนหน้า — ย้ายไปใช้ cron-job.org แล้ว
+  #   - cron: '5 23 * * *'
 
 concurrency:
   group: sync-gasoline

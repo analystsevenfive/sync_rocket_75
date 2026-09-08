@@ -2,9 +2,9 @@ name: Sync Trick2
 
 on:
   workflow_dispatch:
-  schedule:
-    # 05:40 เวลาไทย (UTC+7) = 22:40 UTC ของวันก่อนหน้า — วันละครั้ง
-    - cron: '40 22 * * *'
+  # schedule:
+  #   # 05:40 เวลาไทย (UTC+7) = 22:40 UTC ของวันก่อนหน้า — ย้ายไปใช้ cron-job.org แล้ว
+  #   - cron: '40 22 * * *'
 
 concurrency:
   group: sync-trick2

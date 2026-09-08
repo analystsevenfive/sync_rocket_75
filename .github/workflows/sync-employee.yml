@@ -2,11 +2,11 @@ name: Sync Employee Organization Chart
 
 on:
   workflow_dispatch:
-  schedule:
-    # 06:00 เวลาไทย (UTC+7) = 23:00 UTC ของวันก่อนหน้า
-    - cron: '0 23 * * *'
-    # 17:00 เวลาไทย (UTC+7) = 10:00 UTC
-    - cron: '0 10 * * *'
+  # schedule:
+  #   # 06:00 เวลาไทย (UTC+7) = 23:00 UTC ของวันก่อนหน้า
+  #   - cron: '0 23 * * *'
+  #   # 17:00 เวลาไทย (UTC+7) = 10:00 UTC
+  #   - cron: '0 10 * * *'
 
 concurrency:
   group: sync-employee

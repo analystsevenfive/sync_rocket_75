@@ -2,9 +2,9 @@ name: Sync Daily Repair Update
 
 on:
   workflow_dispatch:
-  schedule:
-    # 19:05 เวลาไทย (UTC+7) = 12:05 UTC — วันละครั้ง (เลี่ยงนาทีที่ :00 เพื่อไม่ให้ติดคิว Delay)
-    - cron: '5 12 * * *'
+  # schedule:
+  #   # 19:05 เวลาไทย (UTC+7) = 12:05 UTC — วันละครั้ง (เลี่ยงนาทีที่ :00 เพื่อไม่ให้ติดคิว Delay)
+  #   - cron: '5 12 * * *'
 
 concurrency:
   group: sync-daily-repair
