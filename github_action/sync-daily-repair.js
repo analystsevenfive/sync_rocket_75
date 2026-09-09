@@ -132,6 +132,10 @@ async function main() {
 
   console.log('CANDIDATE SUB TICKETS ทั้งหมด: ' + candidateSubIds.length);
 
+  if (parentIds.length > 0 && candidateSubIds.length === 0) {
+    throw new Error('พบ ' + parentIds.length + ' parent tickets แต่ไม่พบ sub tickets เลย — ตรวจสอบการเชื่อมต่อหรือโครงสร้างหน้า checkrepair.php หยุดก่อนเพื่อป้องกันข้อมูลในชีทถูกล้าง');
+  }
+
   // ==========================================
   // 3. FETCH DETAIL + FILTER เฉพาะตั๋วที่นัดหมายตรงกับวันนี้จริงๆ
   // ==========================================

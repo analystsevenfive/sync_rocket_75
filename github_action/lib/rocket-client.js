@@ -651,9 +651,13 @@ async function getCheckRepairHtml(parentId, auth) {
 function extractCheckRepairIds(html) {
 
   const ids = [];
-  const regex = /ticket_checkrepair_view\.php\?id=(\d+)/gi;
+  const regex = /ticket_checkrepair_view(?:_fast)?\.php\?id=(\d+)/gi;
   let m;
   while ((m = regex.exec(html)) !== null) {
+    ids.push(m[1]);
+  }
+  const trRegex = /<tr\s+id=["']tr_(\d+)["']/gi;
+  while ((m = trRegex.exec(html)) !== null) {
     ids.push(m[1]);
   }
   return [...new Set(ids)];

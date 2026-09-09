@@ -1,54 +1,24 @@
 const rocket = require('./lib/rocket-client');
 
-// Updated regex logic
-function testExtractCheckRepairIds(html) {
-  const ids = [];
-  const regex = /ticket_checkrepair_view(?:_fast)?\.php\?id=(\d+)/gi;
-  let m;
-  while ((m = regex.exec(html)) !== null) {
-    ids.push(m[1]);
-  }
-  const trRegex = /<tr\s+id=["']tr_(\d+)["']/gi;
-  while ((m = trRegex.exec(html)) !== null) {
-    ids.push(m[1]);
-  }
-  return [...new Set(ids)];
-}
-
 async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const range = rocket.computeTodayRangeBangkok();
-  console.log('Today:', range.start);
+  const parentId = '8690619503';
+  const ovHtml = await rocket.getOverviewHtml(parentId, auth);
+  console.log('Search in overview.php:');
+  console.log('indexOf เปิดบิลลูกค้าภายนอก:', ovHtml.indexOf('เปิดบิลลูกค้าภายนอก'));
+  console.log('indexOf ประเภทงาน:', ovHtml.indexOf('ประเภทงาน'));
 
-  const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, '2');
-  const parentIds = rocket.extractParentTicketIds(parentHtml);
-  console.log('Parent IDs found:', parentIds.length);
-
-  let totalCandidateSub = 0;
-  for (let i = 0; i < Math.min(5, parentIds.length); i++) {
-    const pid = parentIds[i];
-    const crHtml = await rocket.getCheckRepairHtml(pid, auth);
-    const subIds = testExtractCheckRepairIds(crHtml);
-    console.log(`Parent ${pid} -> Sub IDs:`, subIds);
-    totalCandidateSub += subIds.length;
-
-    if (subIds.length > 0) {
-      const firstSubId = subIds[0];
-      const detailHtml = await rocket.getTicketDetailHtml(firstSubId, auth);
-      const ticket = rocket.parseTicketDetail(detailHtml, firstSubId);
-      console.log(`  Detail of ${firstSubId}:`, {
-        ticketNo: ticket.ticketNo,
-        status: ticket.status,
-        appointment: ticket.appointment,
-        customer: ticket.customer,
-        technician: ticket.technician
-      });
-    }
+  const parentHtml = await rocket.getParentPageHtml(parentId, auth);
+  console.log('Search in ticket_view.php:');
+  console.log('indexOf เปิดบิลลูกค้าภายนอก:', parentHtml.indexOf('เปิดบิลลูกค้าภายนอก'));
+  const idx = parentHtml.indexOf('ประเภทงานปัจจุบัน');
+  console.log('indexOf ประเภทงานปัจจุบัน:', idx);
+  if (idx !== -1) {
+    console.log('Snippet around ประเภทงานปัจจุบัน in ticket_view.php:');
+    console.log(parentHtml.substring(idx - 50, idx + 200));
   }
-
-  console.log('Total candidate subs in sample:', totalCandidateSub);
 }
 
 main().catch(console.error);
