@@ -1,16 +1,16 @@
-name: Test all sheets once at 09-00 Bangkok
+name: Test all sheets once at 09-30 Bangkok
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 9 9 *'
+    - cron: '30 2 9 9 *'
 
 permissions:
   contents: read
   actions: write
 
 concurrency:
-  group: test-all-sheets-once-2026-09-09
+  group: test-all-sheets-once-2026-09-09-0930
   cancel-in-progress: false
 
 jobs:
@@ -27,13 +27,13 @@ jobs:
         run: |
           import datetime, json, os, time, urllib.request
 
-          target = datetime.datetime(2026, 9, 9, 2, 0, tzinfo=datetime.timezone.utc)
+          target = datetime.datetime(2026, 9, 9, 2, 30, tzinfo=datetime.timezone.utc)
           now = datetime.datetime.now(datetime.timezone.utc)
           if now.date() != target.date():
               print('Temporary test has expired; nothing dispatched.')
               raise SystemExit(0)
-          if (target - now).total_seconds() > 600:
-              raise RuntimeError('This one-time test may only be armed within 10 minutes of 09:00 Bangkok.')
+          if (target - now).total_seconds() > 1200:
+              raise RuntimeError('This one-time test may only be armed within 20 minutes of 09:30 Bangkok.')
           while datetime.datetime.now(datetime.timezone.utc) < target:
               time.sleep(5)
 
@@ -41,25 +41,28 @@ jobs:
           headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
                      'Accept': 'application/vnd.github+json',
                      'X-GitHub-Api-Version': '2022-11-28'}
-          # A scheduled event can queue behind the manually armed run at 09:00.
-          # Do not dispatch again if a test run already completed today.
+          # A scheduled event can queue behind the manually armed run at 09:30.
+          # Do not dispatch again if a test run already completed today for 09:30.
           request = urllib.request.Request(
               api + '/actions/workflows/test-all-sheets-once.yml/runs?per_page=30', headers=headers)
           with urllib.request.urlopen(request, timeout=30) as response:
               previous = json.load(response)['workflow_runs']
           if any(str(run['id']) != os.environ['RUN_ID'] and
                  run['status'] == 'completed' and
-                 run['created_at'].startswith('2026-09-09') for run in previous):
-              print('A test run already completed today; nothing dispatched.')
+                 run['created_at'] >= '2026-09-09T02:20:00Z' for run in previous):
+              print('A test run already completed today for 09:30; nothing dispatched.')
               raise SystemExit(0)
           workflows = [
-              'sync-7day-installation-plan.yml', 'sync-daily-repair.yml',
-              'sync-employee.yml', 'sync-gasoline.yml', 'sync-ticket-stage.yml',
-              'sync-tickets.yml', 'sync-tomorrow-plan.yml', 'sync-trick2.yml',
-              'sync-yesterday-jobs.yml'
+              'sync-yesterday-jobs.yml', 'sync-daily-repair.yml',
+              'sync-tomorrow-plan.yml', 'sync-ticket-stage.yml',
+              'sync-gasoline.yml', 'sync-7day-installation-plan.yml',
+              'sync-employee.yml', 'sync-tickets.yml',
+              'sync-trick2.yml'
           ]
           failures = []
-          for workflow in workflows:
+          for i, workflow in enumerate(workflows):
+              if i > 0:
+                  time.sleep(15)
               request = urllib.request.Request(api + '/actions/workflows/' + workflow + '/dispatches',
                   data=json.dumps({'ref': 'main'}).encode(), headers=headers, method='POST')
               try:
