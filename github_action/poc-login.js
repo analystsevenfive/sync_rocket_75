@@ -2,41 +2,44 @@ const rocket = require('./lib/rocket-client');
 
 async function main() {
   const auth = await rocket.rocketLogin();
-  console.log('LOGIN OK, auth:', { token: auth.token ? 'yes' : 'no', key: auth.key ? 'yes' : 'no', cookie: auth.cookie ? 'yes' : 'no' });
+  console.log('LOGIN OK');
 
-  // 1. Get parents for today (09/09/2026)
-  const range = rocket.computeTodayRangeBangkok();
-  console.log('Date range today:', range.start);
-  const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, '2');
-  const parentIds = rocket.extractParentTicketIds(parentHtml);
-  console.log('Parent IDs found:', parentIds.length, parentIds.slice(0, 5));
-
-  if (parentIds.length === 0) {
-    console.log('No parents found! Parent HTML snippet:');
-    console.log(parentHtml.substring(0, 500));
-    return;
+  const subId = '9964638966';
+  console.log('--- Test GET ticket_checkrepair_view.php?id=' + subId + ' ---');
+  try {
+    const res1 = await rocket.getTicketDetailHtml(subId, auth);
+    console.log('ticket_checkrepair_view.php length:', res1.length);
+    const parsed1 = rocket.parseTicketDetail(res1, subId);
+    console.log('Parsed ticket_checkrepair_view.php:', {
+      ticketNo: parsed1.ticketNo,
+      status: parsed1.status,
+      appointment: parsed1.appointment,
+      customer: parsed1.customer
+    });
+  } catch (e) {
+    console.log('Error ticket_checkrepair_view.php:', e.message);
   }
 
-  // Test the first 2 parents
-  for (let i = 0; i < Math.min(2, parentIds.length); i++) {
-    const pid = parentIds[i];
-    console.log(`\n--- Testing Parent ID: ${pid} ---`);
-    const crHtml = await rocket.getCheckRepairHtml(pid, auth);
-    console.log('checkrepair.php HTML length:', crHtml.length);
-    console.log('checkrepair.php snippet (first 1500 chars):');
-    console.log(crHtml.substring(0, 1500));
-    console.log('\ncheckrepair.php snippet (characters 1500 - 3000):');
-    console.log(crHtml.substring(1500, 3000));
-    const subIds = rocket.extractCheckRepairIds(crHtml);
-    console.log('extractCheckRepairIds result:', subIds);
-    const info = rocket.extractCheckRepairInfo(crHtml);
-    console.log('extractCheckRepairInfo result:', info);
-
-    // Also let's check ticket_view.php for this parent
-    const pvHtml = await rocket.getParentPageHtml(pid, auth);
-    console.log('ticket_view.php length:', pvHtml.length);
-    const crMatchesInParent = pvHtml.match(/ticket_checkrepair_view\.php\?id=\d+/gi);
-    console.log('ticket_checkrepair_view matches in ticket_view.php:', crMatchesInParent);
+  console.log('--- Test GET ticket_checkrepair_view_fast.php?id=' + subId + ' ---');
+  try {
+    const headers = { Referer: rocket.ROCKET_BASE + '/main/' };
+    if (auth.cookie) headers.Cookie = auth.cookie;
+    const res2 = await rocket.fetchWithTimeout(
+      rocket.ROCKET_BASE + '/main/ticket_checkrepair_view_fast.php?id=' + subId,
+      { method: 'GET', headers: headers, redirect: 'follow' }
+    );
+    console.log('ticket_checkrepair_view_fast.php HTTP status:', res2.status);
+    const text2 = await res2.text();
+    console.log('ticket_checkrepair_view_fast.php length:', text2.length);
+    const parsed2 = rocket.parseTicketDetail(text2, subId);
+    console.log('Parsed ticket_checkrepair_view_fast.php:', {
+      ticketNo: parsed2.ticketNo,
+      status: parsed2.status,
+      appointment: parsed2.appointment,
+      customer: parsed2.customer
+    });
+  } catch (e) {
+    console.log('Error ticket_checkrepair_view_fast.php:', e.message);
   }
 }
 
