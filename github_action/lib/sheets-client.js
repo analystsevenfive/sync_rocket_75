@@ -329,7 +329,22 @@ async function readGridRowCount(sheets, spreadsheetId, sheetId) {
   return sheet ? sheet.properties.gridProperties.rowCount : 0;
 }
 
-async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
+async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows, requiredColumns = 0) {
+  if (requiredColumns > 0) {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId, fields: 'sheets(properties(sheetId,gridProperties))'
+    });
+    const sheet = meta.data.sheets.find(s => s.properties.sheetId === sheetId);
+    if (!sheet) throw new Error('Sheet not found: ' + sheetId);
+    if (sheet.properties.gridProperties.columnCount < requiredColumns) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId, requestBody: { requests: [{ updateSheetProperties: {
+          properties: { sheetId, gridProperties: { columnCount: requiredColumns } },
+          fields: 'gridProperties.columnCount'
+        } }] }
+      });
+    }
+  }
 
   let currentRows = await readGridRowCount(sheets, spreadsheetId, sheetId);
 
@@ -418,94 +433,45 @@ async function batchUpsert(sheets, spreadsheetId, sheetId, sheetName, headers, c
 
 
 
-// replaceSheetData: เขียนทับทั้งชีทด้วยข้อมูลใหม่ที่จัดเรียงแล้ว (เหมาะสำหรับ daily snapshot sheet)
-// 1. เขียน header แถวที่ 1
-// 2. ล้างข้อมูลแถวที่ 2 เป็นต้นไป
-// 3. เขียนแถวข้อมูลใหม่ทั้งหมดตั้งแต่แถว 2 ตามลำดับที่ส่งมา
-async function replaceSheetData(sheets, spreadsheetId, sheetId, sheetName, headers, rows) {
-
-  const lastCol = columnLetter(headers.length);
-
-  // 1. เขียน header แถว 1
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A1:" + lastCol + '1',
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [headers] }
+// Write the replacement and blank its old tail in one values request. Never
+// clear the sheet first: a rejected write must leave the last snapshot intact.
+async function writeSnapshot(sheets, spreadsheetId, sheetId, sheetName, headers, rows, summaryText) {
+  const width = headers.length;
+  const lastCol = columnLetter(width);
+  const name = "'" + sheetName.replace(/'/g, "''") + "'";
+  const headerRow = summaryText === undefined ? 1 : 2;
+  const values = [headers, ...rows.map(r => Array.isArray(r) ? r : r.row)].map(row => {
+    if (!Array.isArray(row) || row.length > width) {
+      throw new Error('Invalid snapshot row for ' + sheetName);
+    }
+    return Array.from({ length: width }, (_, i) => row[i] == null ? '' : row[i]);
   });
-
-  // 2. ล้างข้อมูลเก่าตั้งแต่แถว 2 ลงไป
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A2:" + lastCol
+  await ensureGridSize(sheets, spreadsheetId, sheetId, values.length + headerRow - 1, width);
+  const previous = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: name + '!A' + headerRow + ':' + lastCol
   });
-
-  // 3. ถ้ามีข้อมูลใหม่ ให้เขียนต่อตั้งแต่แถว 2
-  if (rows.length > 0) {
-    await ensureGridSize(sheets, spreadsheetId, sheetId, rows.length + 50);
-
-    const values = rows.map(function(r) {
-      return Array.isArray(r) ? r : (r.row || r);
-    });
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: spreadsheetId,
-      range: "'" + sheetName + "'!A2:" + lastCol + (rows.length + 1),
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: values }
-    });
-  }
-
+  const previousCount = (previous.data.values || []).length;
+  while (values.length < previousCount) values.push(Array(width).fill(''));
+  const data = [{
+    range: name + '!A' + headerRow + ':' + lastCol + (headerRow + values.length - 1),
+    values
+  }];
+  if (summaryText !== undefined) data.unshift({ range: name + '!A1', values: [[summaryText]] });
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId, requestBody: { valueInputOption: 'USER_ENTERED', data }
+  });
 }
 
+async function replaceSheetData(sheets, spreadsheetId, sheetId, sheetName, headers, rows) {
+  await writeSnapshot(sheets, spreadsheetId, sheetId, sheetName, headers, rows);
+}
 
 
 // replaceSheetDataWithSummary: เขียนทับทั้งชีทโดยมีแถว 1 เป็นแถบสรุป (ช่วงข้อมูล + จำนวนรายการ)
 // แถว 2 เป็น header, แถว 3+ เป็นข้อมูลจริง พร้อม Merge, พื้นหลัง #fff2cc, ตัวหนา, และ Freeze 2 แถว
 async function replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, sheetName, summaryText, headers, rows) {
 
-  const lastCol = columnLetter(headers.length);
-
-  // 1. ตรวจสอบและขยายขนาด grid
-  const requiredRows = Math.max(rows.length + 50, 100);
-  await ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows);
-
-  // 2. ล้างข้อมูลเก่าทั้งหมดตั้งแต่แถว 1 ลงไป
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A1:" + lastCol
-  });
-
-  // 3. เขียนแถว 1 (ช่วงข้อมูล) และแถว 2 (หัวตาราง)
-  const writeData = [
-    {
-      range: "'" + sheetName + "'!A1",
-      values: [[summaryText]]
-    },
-    {
-      range: "'" + sheetName + "'!A2:" + lastCol + '2',
-      values: [headers]
-    }
-  ];
-
-  // 4. เขียนแถวข้อมูลตั้งแต่แถว 3
-  if (rows.length > 0) {
-    const rowValues = rows.map(function(r) {
-      return Array.isArray(r) ? r : (r.row || r);
-    });
-    writeData.push({
-      range: "'" + sheetName + "'!A3:" + lastCol + (rows.length + 2),
-      values: rowValues
-    });
-  }
-
-  await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: spreadsheetId,
-    requestBody: {
-      valueInputOption: 'USER_ENTERED',
-      data: writeData
-    }
-  });
+  await writeSnapshot(sheets, spreadsheetId, sheetId, sheetName, headers, rows, summaryText);
 
   // 5. จัด Format แถว 1 (Merge, สีพื้นหลัง #fff2cc, ตัวหนา, Freeze 2 แถวแรก)
   if (sheetId !== null && sheetId !== undefined) {

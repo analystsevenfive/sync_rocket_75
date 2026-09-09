@@ -135,7 +135,7 @@ async function main() {
   let infoMap = {};
 
   if (parentIds.length > 0) {
-    const checkRepairResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
+    const checkRepairResults = await rocket.mapConcurrentStrict(parentIds, PARENT_CONCURRENCY, async function(parentId) {
       const html = await rocket.getCheckRepairHtml(parentId, auth);
       return {
         ids: rocket.extractCheckRepairIds(html),
@@ -167,7 +167,7 @@ async function main() {
   let yesterdayTickets = [];
 
   if (candidateSubIds.length > 0) {
-    const detailResults = await rocket.mapConcurrent(candidateSubIds, SUB_CONCURRENCY, async function(subId) {
+    const detailResults = await rocket.mapConcurrentStrict(candidateSubIds, SUB_CONCURRENCY, async function(subId) {
       const html = await rocket.getTicketDetailHtml(subId, auth);
       const ticket = rocket.parseTicketDetail(html, subId);
       if (!ticket.ticketNo && !ticket.status) {
@@ -218,7 +218,7 @@ async function main() {
     }).filter(Boolean))];
 
     const inspectorMap = {};
-    await rocket.mapConcurrent(subIdsToFetch, INSPECTOR_CONCURRENCY, async function(subId) {
+    await rocket.mapConcurrentStrict(subIdsToFetch, INSPECTOR_CONCURRENCY, async function(subId) {
       const modalHtml = await rocket.getInspectorModalHtml(subId, auth);
       const parsed = rocket.parseInspectorModal(modalHtml);
       inspectorMap[String(subId)] = parsed;
@@ -239,13 +239,9 @@ async function main() {
     if (missingStageParents.length > 0) {
       console.log('กำลังดึง Active Stage เพิ่มเติมจาก ticket_view สำหรับ ' + missingStageParents.length + ' parent tickets...');
       const parentStageMap = {};
-      await rocket.mapConcurrent(missingStageParents, 20, async function(parentId) {
-        try {
-          const pHtml = await rocket.getParentPageHtml(parentId, auth);
-          parentStageMap[String(parentId)] = rocket.parseCurrentJobType(pHtml);
-        } catch (e) {
-          // ignore error
-        }
+      await rocket.mapConcurrentStrict(missingStageParents, 20, async function(parentId) {
+        const pHtml = await rocket.getParentPageHtml(parentId, auth);
+        parentStageMap[String(parentId)] = rocket.parseCurrentJobType(pHtml);
       });
 
       yesterdayTickets.forEach(function(t) {
@@ -271,7 +267,7 @@ async function main() {
     console.log('กำลังดึงเลขที่บิลขาย (ModalProduct.php) สำหรับ ' + productIdsToFetch.length + ' รายการ...');
     const productInvoiceMap = {};
     if (productIdsToFetch.length > 0) {
-      await rocket.mapConcurrent(productIdsToFetch, 20, async function(prodId) {
+      await rocket.mapConcurrentStrict(productIdsToFetch, 20, async function(prodId) {
         const prodHtml = await rocket.getModalProductHtml(prodId, auth);
         const invoiceNo = rocket.parseSalesInvoiceNo(prodHtml);
         productInvoiceMap[String(prodId)] = invoiceNo;

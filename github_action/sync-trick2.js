@@ -53,7 +53,7 @@ async function main() {
   // 2. SUB TICKETS + team/technician info ต่อ parent
   // ==========================================
 
-  const checkRepairResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
+  const checkRepairResults = await rocket.mapConcurrentStrict(parentIds, PARENT_CONCURRENCY, async function(parentId) {
     const html = await rocket.getCheckRepairHtml(parentId, auth);
     return {
       ids: rocket.extractCheckRepairIds(html),
@@ -84,7 +84,7 @@ async function main() {
   // ==========================================
 
   console.log('กำลังดึงรายละเอียดตั๋วทั้งหมด ' + subIds.length + ' ใบ (sync สดใหม่ทุกรายการ)...');
-  const detailResults = await rocket.mapConcurrent(subIds, SUB_CONCURRENCY, async function(subId) {
+  const detailResults = await rocket.mapConcurrentStrict(subIds, SUB_CONCURRENCY, async function(subId) {
     const html = await rocket.getTicketDetailHtml(subId, auth);
     const ticket = rocket.parseTicketDetail(html, subId);
     if (!ticket.ticketNo && !ticket.status) {

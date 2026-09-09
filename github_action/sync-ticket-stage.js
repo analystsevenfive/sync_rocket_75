@@ -274,7 +274,7 @@ async function main() {
     console.log('PARENT_LIMIT=' + PARENT_LIMIT + ' — ทดสอบแค่ ' + targetParentIds.length + ' ใบแรก');
   }
 
-  const results = await rocket.mapConcurrent(targetParentIds, PARENT_CONCURRENCY, async function(parentId) {
+  const results = await rocket.mapConcurrentStrict(targetParentIds, PARENT_CONCURRENCY, async function(parentId) {
     const html = await rocket.getParentPageHtml(parentId, auth);
     const info = extractParentPageStageInfo(html, parentId);
     // เหมือนบั๊กที่เจอใน sync-tickets.js/sync-trick2.js —

@@ -79,37 +79,13 @@ function parseAppointment(appointmentStr) {
   }
 
   const text = appointmentStr.trim();
-  let day = 0;
-  let month = 0;
-  let year = 0;
+  const parts = rocket.parseDateParts(text);
+  const { day = 0, month = 0, year = 0 } = parts || {};
   let hour = 0;
   let minute = 0;
 
-  // 1. ตรวจสอบวันที่รูปแบบ DD/MM/YYYY หรือ D/M/YYYY
-  const m1 = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m1) {
-    day = parseInt(m1[1], 10);
-    month = parseInt(m1[2], 10);
-    year = parseInt(m1[3], 10);
-    if (year > 2400) year -= 543; // แปลง พ.ศ. เป็น ค.ศ.
-  } else {
-    // 2. ตรวจสอบวันที่รูปแบบ 07 Sep 2026 หรือ 7 Sep 2026
-    const MONTH_MAP = {
-      jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
-      jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
-    };
-    const m2 = text.match(/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/i);
-    if (m2) {
-      day = parseInt(m2[1], 10);
-      month = MONTH_MAP[m2[2].toLowerCase()] || 0;
-      year = parseInt(m2[3], 10);
-      if (year > 2400) year -= 543;
-    }
-  }
-
-  // 3. ตรวจสอบเวลา (เช่น 08:00, 08.00, 08.00น.)
   let timeStr = '';
-  const tm = text.match(/(\d{1,2})[:.](\d{2})(?:\s*น\.?)?/);
+  const tm = text.match(/(?:^|[T\s(])(\d{1,2})[:.](\d{2})(?::\d{2})?(?:\s*น\.?)?(?=\s|\)|$)/);
   if (tm) {
     hour = parseInt(tm[1], 10);
     minute = parseInt(tm[2], 10);
@@ -280,7 +256,7 @@ async function main() {
 
   if (parentIds.length > 0) {
     // 2.1 ดึง Sub tickets
-    const checkRepairResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
+    const checkRepairResults = await rocket.mapConcurrentStrict(parentIds, PARENT_CONCURRENCY, async function(parentId) {
       const html = await rocket.getCheckRepairHtml(parentId, auth);
       const ids = rocket.extractCheckRepairIds(html);
       return {
@@ -302,7 +278,7 @@ async function main() {
 
     // 2.2 ดึง Overview ภาพรวมสำหรับ Location (ที่อยู่สาขา)
     console.log(`กำลังดึงข้อมูล Location (ที่อยู่สาขา) จากหน้าภาพรวม ticket_view (${parentIds.length} ใบงาน)...`);
-    const overviewResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
+    const overviewResults = await rocket.mapConcurrentStrict(parentIds, PARENT_CONCURRENCY, async function(parentId) {
       const html = await rocket.getOverviewHtml(parentId, auth);
       return {
         parentId: parentId,
@@ -326,9 +302,12 @@ async function main() {
   const processedParentIds = new Set();
 
   if (candidateSubTickets.length > 0) {
-    const detailResults = await rocket.mapConcurrent(candidateSubTickets, SUB_CONCURRENCY, async function(c) {
+    const detailResults = await rocket.mapConcurrentStrict(candidateSubTickets, SUB_CONCURRENCY, async function(c) {
       const html = await rocket.getTicketDetailHtml(c.subId, auth);
       const ticket = rocket.parseTicketDetail(html, c.subId);
+      if (!ticket.ticketNo && !ticket.status) {
+        throw new Error('Invalid ticket detail for ' + c.subId);
+      }
       ticket.parentId = c.parentId;
       return ticket;
     });

@@ -27,13 +27,12 @@ function sleep(ms) {
 // กิน worker slot ของ mapConcurrent ไปทั้ง job — ไม่มี
 // timeout เดิมเลยเพราะ fetch() เปล่าไม่มี timeout ในตัว
 async function fetchWithTimeout(url, options, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(function() { controller.abort(); }, timeoutMs || FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
-  } finally {
-    clearTimeout(timer);
-  }
+  // fetch resolves at the headers; the signal must remain active while callers
+  // consume text()/arrayBuffer(), otherwise a stalled body never times out.
+  const timeout = AbortSignal.timeout(timeoutMs || FETCH_TIMEOUT_MS);
+  const signal = options && options.signal
+    ? AbortSignal.any([options.signal, timeout]) : timeout;
+  return fetch(url, Object.assign({}, options, { signal }));
 }
 
 
@@ -159,6 +158,19 @@ async function mapConcurrent(items, concurrency, worker, retries) {
 
 }
 
+// Full-sheet replacements must never publish a partial fetch as a complete snapshot.
+async function mapConcurrentStrict(items, concurrency, worker, retries) {
+  const results = await mapConcurrent(items, concurrency, worker, retries);
+  const failed = results.map((result, i) => ({ result, item: items[i] }))
+    .filter(({ result }) => result && result.__error !== undefined);
+  if (failed.length) {
+    const sample = failed.slice(0, 3).map(({ item, result }) =>
+      JSON.stringify(item) + ': ' + result.__error).join('; ');
+    throw new Error('Incomplete fetch (' + failed.length + '/' + items.length +
+      ' failed); keeping previous sheet data. ' + sample);
+  }
+  return results;
+}
 
 
 function computeLast3MonthsRangeBangkok() {
@@ -528,7 +540,12 @@ async function getParentTicketHtml(auth, startDate, endDate, dateType, nameSearc
     throw new Error('getTable.php HTTP ' + res.status);
   }
 
-  return res.text();
+  const html = await res.text();
+  if (!/<(?:table|tbody|tr)\b/i.test(html) ||
+      /<input\b[^>]*\btype\s*=\s*["']?password/i.test(html)) {
+    throw new Error('getTable.php did not return a ticket table; keeping previous sheet data');
+  }
+  return html;
 
 }
 
@@ -956,19 +973,12 @@ async function getInspectorModalHtml(ticketId, auth) {
   body.set('token', auth.token);
   body.set('key', auth.key);
 
-  try {
-    const res = await fetchWithTimeout(
-      ROCKET_BASE + '/main/ajax/ticket_view/inspector/ModalView_inspector.php',
-      { method: 'POST', headers: headers, body: body }
-    );
-    if (res.status === 200) {
-      return await res.text();
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  return '';
+  const res = await fetchWithTimeout(
+    ROCKET_BASE + '/main/ajax/ticket_view/inspector/ModalView_inspector.php',
+    { method: 'POST', headers: headers, body: body }
+  );
+  if (res.status !== 200) throw new Error('getInspectorModalHtml HTTP ' + res.status);
+  return res.text();
 
 }
 
@@ -1064,19 +1074,12 @@ async function getModalProductHtml(productId, auth) {
   body.set('token', auth.token);
   body.set('key', auth.key);
 
-  try {
-    const res = await fetchWithTimeout(
-      ROCKET_BASE + '/main/ajax/ticket/ModalProduct.php',
-      { method: 'POST', headers: headers, body: body }
-    );
-    if (res.status === 200) {
-      return await res.text();
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  return '';
+  const res = await fetchWithTimeout(
+    ROCKET_BASE + '/main/ajax/ticket/ModalProduct.php',
+    { method: 'POST', headers: headers, body: body }
+  );
+  if (res.status !== 200) throw new Error('getModalProductHtml HTTP ' + res.status);
+  return res.text();
 
 }
 
@@ -1257,6 +1260,7 @@ module.exports = {
   rocketLogin,
   fetchWithTimeout,
   mapConcurrent,
+  mapConcurrentStrict,
   computeLast3MonthsRangeBangkok,
   computeTomorrowRangeBangkok,
   computeTodayRangeBangkok,
@@ -1294,4 +1298,3 @@ module.exports = {
   extractLastBreadcrumbText,
   extractRegex
 };
-

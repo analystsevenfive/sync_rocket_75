@@ -86,7 +86,7 @@ async function main() {
   // 2. SUB TICKETS (checkrepair.php ต่อ parent)
   // ==========================================
 
-  const checkRepairResults = await rocket.mapConcurrent(parentIds, PARENT_CONCURRENCY, async function(parentId) {
+  const checkRepairResults = await rocket.mapConcurrentStrict(parentIds, PARENT_CONCURRENCY, async function(parentId) {
     const html = await rocket.getCheckRepairHtml(parentId, auth);
     return rocket.extractCheckRepairIds(html);
   });
@@ -111,7 +111,7 @@ async function main() {
   // ==========================================
 
   console.log('กำลังดึงรายละเอียดตั๋วทั้งหมด ' + subIds.length + ' ใบ (sync สดใหม่ทุกรายการ)...');
-  const detailResults = await rocket.mapConcurrent(subIds, SUB_CONCURRENCY, async function(subId) {
+  const detailResults = await rocket.mapConcurrentStrict(subIds, SUB_CONCURRENCY, async function(subId) {
     const html = await rocket.getTicketDetailHtml(subId, auth);
     const ticket = rocket.parseTicketDetail(html, subId);
     if (!ticket.ticketNo && !ticket.status) {
@@ -136,14 +136,10 @@ async function main() {
   if (validTickets.length > 0) {
     console.log('กำลังดึงสถานะการตรวจงาน (ModalView_inspector)...');
     const inspectorMap = {};
-    await rocket.mapConcurrent(validTickets.map(t => t.ticketId), INSPECTOR_CONCURRENCY, async function(subId) {
-      try {
-        const modalHtml = await rocket.getInspectorModalHtml(subId, auth);
-        const parsed = rocket.parseInspectorModal(modalHtml);
-        inspectorMap[String(subId)] = parsed;
-      } catch (e) {
-        // ignore
-      }
+    await rocket.mapConcurrentStrict(validTickets.map(t => t.ticketId), INSPECTOR_CONCURRENCY, async function(subId) {
+      const modalHtml = await rocket.getInspectorModalHtml(subId, auth);
+      const parsed = rocket.parseInspectorModal(modalHtml);
+      inspectorMap[String(subId)] = parsed;
     });
 
     validTickets.forEach(function(t) {
@@ -164,14 +160,10 @@ async function main() {
     console.log('กำลังดึงเลขที่บิลขาย (ModalProduct.php) สำหรับ ' + productIdsToFetch.length + ' รายการ...');
     const productInvoiceMap = {};
     if (productIdsToFetch.length > 0) {
-      await rocket.mapConcurrent(productIdsToFetch, PRODUCT_CONCURRENCY, async function(prodId) {
-        try {
-          const prodHtml = await rocket.getModalProductHtml(prodId, auth);
-          const invoiceNo = rocket.parseSalesInvoiceNo(prodHtml);
-          productInvoiceMap[String(prodId)] = invoiceNo;
-        } catch (e) {
-          // ignore
-        }
+      await rocket.mapConcurrentStrict(productIdsToFetch, PRODUCT_CONCURRENCY, async function(prodId) {
+        const prodHtml = await rocket.getModalProductHtml(prodId, auth);
+        const invoiceNo = rocket.parseSalesInvoiceNo(prodHtml);
+        productInvoiceMap[String(prodId)] = invoiceNo;
       });
     }
 

@@ -202,9 +202,10 @@ async function fetchGasolineTeamXlsx(auth, teamId, range) {
     headers.Cookie = auth.cookie;
   }
 
-  const res = await fetch(
+  const res = await rocket.fetchWithTimeout(
     ROCKET_BASE + '/main/ajax/report_ticket/gasoline/export_cost_team.php',
-    { method: 'POST', headers: headers, body: body }
+    { method: 'POST', headers: headers, body: body },
+    120000
   );
 
   if (res.status !== 200) {
@@ -666,8 +667,11 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
 
   const data = [];
   const newRows = [];
+  const uniqueRows = new Map();
+  rows.forEach(r => uniqueRows.set(
+    String(r.ticketNo).trim() + '__' + String(r.technician || '').trim(), r));
 
-  rows.forEach(function(r) {
+  uniqueRows.forEach(function(r) {
 
     const ticketKey = String(r.ticketNo).trim();
     const techKey = String(r.technician || '').trim();
@@ -697,7 +701,7 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
       lastSync, url
     ];
 
-    const existingRow = ctx.index[ticketKey + '__' + techKey] || ctx.index[r.ticketNo] || ctx.index[ticketKey];
+    const existingRow = ctx.index[ticketKey + '__' + techKey];
 
     if (existingRow) {
 
@@ -716,7 +720,7 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
 
     } else {
 
-      newRows.push({ ticketNo: r.ticketNo, technician: r.technician, dataRow: dataRow });
+      newRows.push({ ticketNo: ticketKey, technician: techKey, dataRow: dataRow });
 
     }
 

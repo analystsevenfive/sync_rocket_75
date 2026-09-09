@@ -1976,7 +1976,7 @@ function buildGasolineDetailRowIndex_(sheet) {
         2,
         3,
         lastRow - 1,
-        1
+        3
       ).getDisplayValues();
 
     const countStackFormulas =
@@ -1994,7 +1994,7 @@ function buildGasolineDetailRowIndex_(sheet) {
         const rowNum =
           i + 2;
 
-        index[String(row[0])] =
+        index[String(row[0]).trim() + '__' + String(row[2] || '').trim()] =
           rowNum;
 
         hasFormula[rowNum] =
@@ -2056,7 +2056,11 @@ function batchUpsertGasolineDetail_(
   const newRows = [];
 
 
+  const uniqueRows = new Map();
   rows.forEach(function(r) {
+    uniqueRows.set(String(r.ticketNo).trim() + '__' + String(r.technician || '').trim(), r);
+  });
+  uniqueRows.forEach(function(r) {
 
     const url =
       urlMap[r.ticketNo] ||
@@ -2078,7 +2082,7 @@ function batchUpsertGasolineDetail_(
     ];
 
     const existingRow =
-      ctx.index[String(r.ticketNo)];
+      ctx.index[String(r.ticketNo).trim() + '__' + String(r.technician || '').trim()];
 
 
     if (existingRow) {
@@ -2125,6 +2129,7 @@ function batchUpsertGasolineDetail_(
       newRows.push({
 
         ticketNo: r.ticketNo,
+        technician: r.technician,
         dataRow: dataRow
 
       });
@@ -2169,7 +2174,7 @@ function batchUpsertGasolineDetail_(
 
     newRows.forEach(function(nr, i) {
 
-      ctx.index[String(nr.ticketNo)] =
+      ctx.index[String(nr.ticketNo).trim() + '__' + String(nr.technician || '').trim()] =
         startRow + i;
 
     });

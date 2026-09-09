@@ -1400,33 +1400,13 @@ function getCheckRepair_(
  *************************************************/
 
 function extractCheckRepairIds_(html) {
-
   const ids = [];
-
-
-  const regex =
-    /ticket_checkrepair_view\.php\?id=(\d+)/gi;
-
-
-  let m;
-
-
-  while (
-    (m = regex.exec(html))
-    !== null
-  ) {
-
-    ids.push(
-      m[1]
-    );
-
-  }
-
-
-  return [
-    ...new Set(ids)
-  ];
-
+  const linkRegex = /ticket_checkrepair_view(?:_fast)?\.php\?id=(\d+)/gi;
+  const rowRegex = /<tr\b[^>]*\bid=["']tr_(\d+)["']/gi;
+  let match;
+  while ((match = linkRegex.exec(html)) !== null) ids.push(match[1]);
+  while ((match = rowRegex.exec(html)) !== null) ids.push(match[1]);
+  return [...new Set(ids)];
 }
 
 

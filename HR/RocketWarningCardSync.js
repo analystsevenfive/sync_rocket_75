@@ -371,21 +371,21 @@ function wcWriteSnapshot_(rows, range) {
   if (!sheet) sheet = spreadsheet.insertSheet(WC_CONFIG.SHEET_NAME);
 
   const columnCount = WC_HEADERS.length;
-  const oldFilter = sheet.getFilter();
-  if (oldFilter) oldFilter.remove();
-
-  sheet.getRange(1, 1, 2, columnCount).breakApart();
-  const rowsToClear = Math.max(sheet.getLastRow(), rows.length + 2, 2);
-  sheet.getRange(1, 1, rowsToClear, columnCount).clearContent();
-
   const rangeText = 'ช่วงข้อมูล ' + range.startDate + ' - ' + range.endDate +
     ' | จำนวน ' + rows.length + ' รายการ';
-  sheet.getRange(1, 1, 1, columnCount).merge().setValue(rangeText);
-  sheet.getRange(2, 1, 1, columnCount).setValues([WC_HEADERS]);
-
-  if (rows.length > 0) {
-    sheet.getRange(3, 1, rows.length, columnCount).setValues(rows);
+  const snapshot = [[rangeText].concat(Array(columnCount - 1).fill('')), WC_HEADERS].concat(rows);
+  const requiredRows = Math.max(sheet.getLastRow(), snapshot.length);
+  while (snapshot.length < requiredRows) snapshot.push(Array(columnCount).fill(''));
+  if (sheet.getMaxRows() < requiredRows) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), requiredRows - sheet.getMaxRows());
   }
+  sheet.getRange(1, 1, 2, columnCount).breakApart();
+  // Replace values and the obsolete tail together; never clear the last snapshot first.
+  sheet.getRange(1, 1, snapshot.length, columnCount).setValues(snapshot);
+
+  const oldFilter = sheet.getFilter();
+  if (oldFilter) oldFilter.remove();
+  sheet.getRange(1, 1, 1, columnCount).merge();
 
   wcFormatSheet_(sheet, rows.length);
   SpreadsheetApp.flush();

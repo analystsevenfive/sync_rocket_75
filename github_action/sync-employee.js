@@ -162,7 +162,7 @@ async function fetchOrgChartPage(auth) {
     headers.Cookie = auth.cookie;
   }
 
-  const res = await fetch(ROCKET_BASE + '/hr/organization_chart.php', {
+  const res = await rocket.fetchWithTimeout(ROCKET_BASE + '/hr/organization_chart.php', {
     method: 'GET',
     headers: headers
   });
@@ -195,20 +195,15 @@ async function fetchOrgChartTableAjax(auth, departmentId) {
     body.set('hr_department_id', String(departmentId));
   }
 
-  try {
-    const res = await fetch(ROCKET_BASE + '/hr/ajax/organization_chart/Table.php', {
-      method: 'POST',
-      headers: headers,
-      body: body
-    });
-    if (res.status === 200) {
-      return await res.text();
-    }
-  } catch (e) {
-    // AJAX Table.php อาจไม่มีหรือ error ปล่อยผ่านไป
-  }
+  const res = await rocket.fetchWithTimeout(ROCKET_BASE + '/hr/ajax/organization_chart/Table.php', {
+    method: 'POST', headers, body
+  });
+  if (res.status === 200) return res.text();
+  // The optional all-department endpoint may not exist. Once a department was
+  // discovered, its fetch must succeed before replacing the directory.
+  if (!departmentId && (res.status === 404 || res.status === 405)) return '';
+  throw new Error('Organization chart department ' + (departmentId || 'all') + ' HTTP ' + res.status);
 
-  return '';
 }
 
 /**
@@ -232,39 +227,38 @@ async function fetchDepartmentIds(auth, html) {
   }
 
   // หรือลองดึงจาก Get_hr_department.php
-  try {
-    const headers = {
-      Origin: ROCKET_BASE,
-      Referer: ROCKET_BASE + '/hr/organization_chart.php',
-      'X-Requested-With': 'XMLHttpRequest'
-    };
-    if (auth.cookie) {
-      headers.Cookie = auth.cookie;
-    }
+  const headers = {
+    Origin: ROCKET_BASE,
+    Referer: ROCKET_BASE + '/hr/organization_chart.php',
+    'X-Requested-With': 'XMLHttpRequest'
+  };
+  if (auth.cookie) {
+    headers.Cookie = auth.cookie;
+  }
 
-    const body = new URLSearchParams();
-    body.set('token', auth.token);
-    body.set('key', auth.key);
+  const body = new URLSearchParams();
+  body.set('token', auth.token);
+  body.set('key', auth.key);
 
-    const res = await fetch(ROCKET_BASE + '/hr/ajax/organization_chart/Get_hr_department.php', {
-      method: 'POST',
-      headers: headers,
-      body: body
-    });
+  const res = await rocket.fetchWithTimeout(ROCKET_BASE + '/hr/ajax/organization_chart/Get_hr_department.php', {
+    method: 'POST',
+    headers: headers,
+    body: body
+  });
 
-    if (res.status === 200) {
-      const deptHtml = await res.text();
-      const optRegex = /<option[^>]*value=["']([^"']+)["']/gi;
-      let optMatch;
-      while ((optMatch = optRegex.exec(deptHtml)) !== null) {
-        const val = optMatch[1].trim();
-        if (val && val !== '0' && val !== 'x' && val !== '') {
-          deptIds.add(val);
-        }
+  if (res.status !== 200 && res.status !== 404 && res.status !== 405) {
+    throw new Error('Department discovery HTTP ' + res.status);
+  }
+  if (res.status === 200) {
+    const deptHtml = await res.text();
+    const optRegex = /<option[^>]*value=["']([^"']+)["']/gi;
+    let optMatch;
+    while ((optMatch = optRegex.exec(deptHtml)) !== null) {
+      const val = optMatch[1].trim();
+      if (val && val !== '0' && val !== 'x' && val !== '') {
+        deptIds.add(val);
       }
     }
-  } catch (e) {
-    // ignore
   }
 
   return Array.from(deptIds);
@@ -342,6 +336,10 @@ async function main() {
   console.log('รวมพนักงานทั้งหมดที่ไม่ซ้ำกัน: ' + employeeList.length + ' คน');
 
   // จัดเรียงตามรหัสพนักงาน
+  if (employeeList.length === 0) {
+    throw new Error("No employees parsed; keeping previous sheet data.");
+  }
+
   employeeList.sort(function(a, b) {
     return (a.employeeId || '').localeCompare(b.employeeId || '');
   });
