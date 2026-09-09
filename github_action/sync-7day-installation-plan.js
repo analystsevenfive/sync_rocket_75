@@ -1,7 +1,7 @@
 /*************************************************
  * SYNC 7-DAY INSTALLATION PLAN
  *
- * รายงานแผนงานติดตั้งประจำวันระยะเวลา 7 วัน (Appointment today + 7 วันข้างหน้า)
+ * รายงานแผนงานติดตั้ง 7 วัน เริ่มจากวันพรุ่งนี้
  * ตามเวลากรุงเทพ (UTC+7)
  *
  * แหล่งข้อมูล: Rocket75 (search_type=3 สำหรับงานติดตั้ง IN, date_type=2 สำหรับวันที่นัดหมาย)
@@ -42,16 +42,17 @@ const HEADERS = [
 ];
 
 /**
- * คำนวณช่วงวันที่ วันนี้ ถึง วันนี้ + 7 วัน (เวลาประเทศไทย UTC+7)
+ * คำนวณช่วง 7 วัน เริ่มพรุ่งนี้ถึงวันที่ 7 นับจากวันนี้ (เวลาประเทศไทย UTC+7)
  */
-function compute7DayPlanRangeBangkok() {
-  const now = new Date();
+function compute7DayPlanRangeBangkok(now = new Date()) {
   const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
   const bkkNow = new Date(utc + (7 * 3600000));
 
-  const startYear = bkkNow.getFullYear();
-  const startMonth = bkkNow.getMonth() + 1;
-  const startDay = bkkNow.getDate();
+  const startDateObj = new Date(bkkNow);
+  startDateObj.setDate(startDateObj.getDate() + 1);
+  const startYear = startDateObj.getFullYear();
+  const startMonth = startDateObj.getMonth() + 1;
+  const startDay = startDateObj.getDate();
 
   const endDateObj = new Date(bkkNow);
   endDateObj.setDate(endDateObj.getDate() + 7);
@@ -222,7 +223,7 @@ async function main() {
   console.log('LOGIN OK');
 
   const range = compute7DayPlanRangeBangkok();
-  console.log(`ช่วงวันที่นัดหมาย (วันนี้ + 7 วัน): ${range.start} ถึง ${range.end}`);
+  console.log(`ช่วงวันที่นัดหมาย (เริ่มพรุ่งนี้ 7 วัน): ${range.start} ถึง ${range.end}`);
 
   // ==========================================
   // 1. ค้นหาตั๋วงานติดตั้ง (search_type=3, date_type=2)
@@ -319,7 +320,7 @@ async function main() {
       const ov = overviewMap[r.parentId] || {};
       const parsedAppt = parseAppointment(r.appointment);
 
-      // ตรวจสอบว่าวันนัดหมายอยู่ในช่วง [วันนี้, วันนี้ + 7 วัน] หรือไม่
+      // ตรวจสอบว่าวันนัดหมายอยู่ในช่วง [พรุ่งนี้, วันที่ 7 นับจากวันนี้]
       let inRange = false;
       if (parsedAppt.dateObj) {
         inRange = parsedAppt.dateObj >= range.startDateObj && parsedAppt.dateObj <= range.endDateObj;

@@ -248,6 +248,13 @@ test('installation plan accepts Thai and ISO appointment dates', () => {
   }
 });
 
+test('installation plan covers exactly seven days starting tomorrow in Bangkok', () => {
+  const script = loadScript('sync-7day-installation-plan.js');
+  const range = script.compute7DayPlanRangeBangkok(new Date('2026-09-09T13:30:00Z'));
+  assert.equal(range.start, '10/09/2026');
+  assert.equal(range.end, '16/09/2026');
+});
+
 test('upgraded SheetJS preserves Thai gasoline exports, ticket text and amounts', () => {
   const XLSX = require('xlsx');
   const script = loadScript('sync-gasoline.js', { xlsx: XLSX });
