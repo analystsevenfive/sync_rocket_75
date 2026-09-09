@@ -335,14 +335,16 @@ function parseDateParts(dateStr) {
     }
   }
 
-  // 2. "04/09/2026", "4-9-2026" (DD/MM/YYYY or DD-MM-YYYY)
-  const dmyMatch = cleaned.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  // 2. "04/09/2026", "4-9-2026", "04.09.2569" (DD/MM/YYYY)
+  const dmyMatch = cleaned.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/);
   if (dmyMatch) {
     const day = parseInt(dmyMatch[1], 10);
     const month = parseInt(dmyMatch[2], 10);
     let year = parseInt(dmyMatch[3], 10);
     if (year > 2400) {
       year -= 543;
+    } else if (year < 100) {
+      year += year >= 50 ? 1900 : 2000;
     }
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year > 2000) {
       return { year, month, day };

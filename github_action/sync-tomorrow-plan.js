@@ -173,6 +173,11 @@ async function main() {
 
   console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันพรุ่งนี้จริง: ' + tomorrowTickets.length);
 
+  if (parentIds.length > 0 && candidateSubIds.length > 0 && tomorrowTickets.length === 0) {
+    throw new Error('พบ parent/sub tickets แต่ไม่พบ appointment ที่ตรงกับวันที่ ' + range.start +
+      ' — หยุดก่อนล้างชีท; ตรวจสอบรูปแบบวันที่ใน ticket detail หรือ date filter ของ Rocket');
+  }
+
   tomorrowTickets.forEach(function(t) {
     const parentNo = (t.parentTicketNo || (t.ticketNo ? t.ticketNo.replace(/\.[A-Z0-9]+$/i, '') : '')).trim();
     t.customerCode = t.customerCode ||
