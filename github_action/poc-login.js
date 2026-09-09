@@ -1,46 +1,54 @@
 const rocket = require('./lib/rocket-client');
 
+// Updated regex logic
+function testExtractCheckRepairIds(html) {
+  const ids = [];
+  const regex = /ticket_checkrepair_view(?:_fast)?\.php\?id=(\d+)/gi;
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    ids.push(m[1]);
+  }
+  const trRegex = /<tr\s+id=["']tr_(\d+)["']/gi;
+  while ((m = trRegex.exec(html)) !== null) {
+    ids.push(m[1]);
+  }
+  return [...new Set(ids)];
+}
+
 async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const subId = '9964638966';
-  console.log('--- Test GET ticket_checkrepair_view.php?id=' + subId + ' ---');
-  try {
-    const res1 = await rocket.getTicketDetailHtml(subId, auth);
-    console.log('ticket_checkrepair_view.php length:', res1.length);
-    const parsed1 = rocket.parseTicketDetail(res1, subId);
-    console.log('Parsed ticket_checkrepair_view.php:', {
-      ticketNo: parsed1.ticketNo,
-      status: parsed1.status,
-      appointment: parsed1.appointment,
-      customer: parsed1.customer
-    });
-  } catch (e) {
-    console.log('Error ticket_checkrepair_view.php:', e.message);
+  const range = rocket.computeTodayRangeBangkok();
+  console.log('Today:', range.start);
+
+  const parentHtml = await rocket.getParentTicketHtml(auth, range.start, range.end, '2');
+  const parentIds = rocket.extractParentTicketIds(parentHtml);
+  console.log('Parent IDs found:', parentIds.length);
+
+  let totalCandidateSub = 0;
+  for (let i = 0; i < Math.min(5, parentIds.length); i++) {
+    const pid = parentIds[i];
+    const crHtml = await rocket.getCheckRepairHtml(pid, auth);
+    const subIds = testExtractCheckRepairIds(crHtml);
+    console.log(`Parent ${pid} -> Sub IDs:`, subIds);
+    totalCandidateSub += subIds.length;
+
+    if (subIds.length > 0) {
+      const firstSubId = subIds[0];
+      const detailHtml = await rocket.getTicketDetailHtml(firstSubId, auth);
+      const ticket = rocket.parseTicketDetail(detailHtml, firstSubId);
+      console.log(`  Detail of ${firstSubId}:`, {
+        ticketNo: ticket.ticketNo,
+        status: ticket.status,
+        appointment: ticket.appointment,
+        customer: ticket.customer,
+        technician: ticket.technician
+      });
+    }
   }
 
-  console.log('--- Test GET ticket_checkrepair_view_fast.php?id=' + subId + ' ---');
-  try {
-    const headers = { Referer: rocket.ROCKET_BASE + '/main/' };
-    if (auth.cookie) headers.Cookie = auth.cookie;
-    const res2 = await rocket.fetchWithTimeout(
-      rocket.ROCKET_BASE + '/main/ticket_checkrepair_view_fast.php?id=' + subId,
-      { method: 'GET', headers: headers, redirect: 'follow' }
-    );
-    console.log('ticket_checkrepair_view_fast.php HTTP status:', res2.status);
-    const text2 = await res2.text();
-    console.log('ticket_checkrepair_view_fast.php length:', text2.length);
-    const parsed2 = rocket.parseTicketDetail(text2, subId);
-    console.log('Parsed ticket_checkrepair_view_fast.php:', {
-      ticketNo: parsed2.ticketNo,
-      status: parsed2.status,
-      appointment: parsed2.appointment,
-      customer: parsed2.customer
-    });
-  } catch (e) {
-    console.log('Error ticket_checkrepair_view_fast.php:', e.message);
-  }
+  console.log('Total candidate subs in sample:', totalCandidateSub);
 }
 
 main().catch(console.error);
