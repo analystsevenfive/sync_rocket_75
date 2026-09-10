@@ -199,7 +199,7 @@ function itemToRow(d, lastSync) {
 
   return [
     d.ticketNo || '',
-    d.salesperson || '',
+    '', // Salesperson: ไม่ต้องเขียน value ลงชีท (เว้นว่างไว้)
     d.reportDate || '',
     d.appointmentDate || '',
     d.appointmentTime || '',

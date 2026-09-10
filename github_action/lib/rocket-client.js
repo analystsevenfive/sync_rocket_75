@@ -530,22 +530,36 @@ async function getParentTicketHtml(auth, startDate, endDate, dateType, nameSearc
   // (~2,150+ รายการสำหรับ 3 เดือน) หนักกว่าการ fetch ทีละ
   // ใบมาก — 30 วิ default ไม่พอจริง (เจอ AbortError จริง)
   // ให้เวลามากกว่าปกติเฉพาะจุดนี้
-  const res = await fetchWithTimeout(ROCKET_BASE + '/main/ajax/ticket/getTable.php', {
-    method: 'POST',
-    headers: headers,
-    body: body
-  }, 120000);
+  let lastError;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      // The three-month query normally takes around 100 seconds and sometimes
+      // exceeds the previous 120-second limit during Rocket peak load.
+      const res = await fetchWithTimeout(ROCKET_BASE + '/main/ajax/ticket/getTable.php', {
+        method: 'POST',
+        headers: headers,
+        body: body
+      }, 300000);
 
-  if (res.status !== 200) {
-    throw new Error('getTable.php HTTP ' + res.status);
-  }
+      if (res.status !== 200) {
+        throw new Error('getTable.php HTTP ' + res.status);
+      }
 
-  const html = await res.text();
-  if (!/<(?:table|tbody|tr)\b/i.test(html) ||
-      /<input\b[^>]*\btype\s*=\s*["']?password/i.test(html)) {
-    throw new Error('getTable.php did not return a ticket table; keeping previous sheet data');
+      const html = await res.text();
+      if (!/<(?:table|tbody|tr)\b/i.test(html) ||
+          /<input\b[^>]*\btype\s*=\s*["']?password/i.test(html)) {
+        throw new Error('getTable.php did not return a ticket table; keeping previous sheet data');
+      }
+      return html;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) {
+        console.log('getTable.php attempt ' + attempt + ' failed; retrying: ' + error.message);
+        await sleep(2000);
+      }
+    }
   }
-  return html;
+  throw lastError;
 
 }
 

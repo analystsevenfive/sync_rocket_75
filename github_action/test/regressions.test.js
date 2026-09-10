@@ -195,6 +195,21 @@ test('HTTP 200 login/blank pages are not mistaken for an empty ticket table', as
   } finally { global.fetch = original; }
 });
 
+test('parent ticket table retries a transient failure', async () => {
+  const original = global.fetch;
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts++;
+    return attempts === 1
+      ? new Response('Busy', { status: 503 })
+      : new Response('<table><tbody></tbody></table>');
+  };
+  try {
+    assert.equal(await rocket.getParentTicketHtml({}, '', ''), '<table><tbody></tbody></table>');
+    assert.equal(attempts, 2);
+  } finally { global.fetch = original; }
+});
+
 test('a discovered employee department cannot silently fail', async () => {
   const script = loadScript('sync-employee.js', {
     './lib/rocket-client': { ROCKET_BASE: 'https://example.test',
@@ -253,6 +268,17 @@ test('installation plan covers exactly seven days starting tomorrow in Bangkok',
   const range = script.compute7DayPlanRangeBangkok(new Date('2026-09-09T13:30:00Z'));
   assert.equal(range.start, '10/09/2026');
   assert.equal(range.end, '16/09/2026');
+});
+
+test('installation plan does not write salesperson value to sheet rows', () => {
+  const script = loadScript('sync-7day-installation-plan.js');
+  const row = script.itemToRow({
+    ticketNo: 'BKIN0926-000098.R02',
+    salesperson: 'สุดารัตน์ จุใจ',
+    reportDate: '10/09/2026'
+  }, '10/09/2026 12:00:00');
+  assert.equal(row[0], 'BKIN0926-000098.R02');
+  assert.equal(row[1], ''); // Salesperson column is empty
 });
 
 test('upgraded SheetJS preserves Thai gasoline exports, ticket text and amounts', () => {

@@ -2,6 +2,10 @@ name: Sync 7-Day Installation Plan
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'github_action/sync-7day-installation-plan.js'
+      - '.github/workflows/sync-7day-installation-plan.yml'
   # schedule:
   #   # 06:00 เวลาไทย (UTC+7) = 23:00 UTC ของวันก่อนหน้า — วันละครั้ง
   #   - cron: '0 23 * * *'
