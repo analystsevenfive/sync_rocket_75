@@ -91,6 +91,26 @@ test('gasoline keeps different technicians on separate rows and deduplicates rep
   assert.ok(state.writes.every(write => !write.range.includes('A3:')));
 });
 
+test('gasoline computeDateRange defaults to the 1st of last month and supports rollover across years', () => {
+  const script = loadScript('sync-gasoline.js');
+  // 11 September 2026 -> 01/08/2026 to 11/09/2026
+  const sepDate = new Date('2026-09-11T08:00:00+07:00');
+  const sepRange = script.computeDateRange('', '', sepDate);
+  assert.equal(sepRange.start, '01/08/2026');
+  assert.equal(sepRange.end, '11/09/2026');
+
+  // Year rollover: 15 January 2027 -> 01/12/2026 to 15/01/2027
+  const janDate = new Date('2027-01-15T10:00:00+07:00');
+  const janRange = script.computeDateRange('', '', janDate);
+  assert.equal(janRange.start, '01/12/2026');
+  assert.equal(janRange.end, '15/01/2027');
+
+  // Override support
+  const overrideRange = script.computeDateRange('01/05/2026', '31/05/2026', sepDate);
+  assert.equal(overrideRange.start, '01/05/2026');
+  assert.equal(overrideRange.end, '31/05/2026');
+});
+
 test('backfill locates current and legacy headers and updates only missing Ticket No cells', async () => {
   for (const values of [
     [['summary'], ['Inspection Status', 'Sales Invoice No.', 'Ticket ID', 'Parent Ticket ID', 'Parent Ticket No', 'Ticket No'], ['OK', 'INV', '42', '9', 'BK1', '']],

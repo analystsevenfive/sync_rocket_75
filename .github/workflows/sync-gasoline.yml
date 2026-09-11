@@ -4,13 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       start_date:
-        description: 'Start date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันที่ 1 ของเดือนปัจจุบัน'
+        description: 'Start date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันที่ 1 ของเดือนที่แล้ว'
         required: false
         default: ''
       end_date:
         description: 'End date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันนี้'
         required: false
         default: ''
+  push:
+    paths:
+      - 'github_action/sync-gasoline.js'
+      - '.github/workflows/sync-gasoline.yml'
   # schedule:
   #   # 06:05 เวลาไทย (UTC+7) = 23:05 UTC ของวันก่อนหน้า — ย้ายไปใช้ cron-job.org แล้ว
   #   - cron: '5 23 * * *'

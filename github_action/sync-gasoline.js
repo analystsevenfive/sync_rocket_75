@@ -31,10 +31,10 @@ const TICKETS_SHEET_NAME = 'Tickets';
 const GASOLINE_SHEET_NAME = 'Gasoline Detail';
 const RATE_PER_JOB = 80;
 
-// ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 1 ของเดือนปัจจุบันเสมอ (01/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
-// เพื่อให้ข้อมูลทั้งเดือนถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ
+// ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 1 ของเดือนที่แล้วเสมอ (01/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
+// เพื่อให้ข้อมูลทั้งเดือนที่แล้วและเดือนปัจจุบันถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ
 // รองรับ override ผ่าน environment variables (GASOLINE_START_DATE, GASOLINE_END_DATE) สำหรับยิงย้อนหลัง
-function computeDateRange(startOverride, endOverride) {
+function computeDateRange(startOverride, endOverride, baseDate = new Date()) {
 
   function bangkokDateParts(date) {
     const parts = new Intl.DateTimeFormat('en-US', {
@@ -51,14 +51,20 @@ function computeDateRange(startOverride, endOverride) {
     return dd + '/' + mm + '/' + year;
   }
 
-  const now = bangkokDateParts(new Date());
+  const now = bangkokDateParts(baseDate);
 
   let start = (startOverride || '').trim();
   let end = (endOverride || '').trim();
 
-  // ถ้าไม่ระบุ start_date -> ใช้วันที่ 1 ของเดือนปัจจุบันเสมอ (ตามเวลากรุงเทพ)
+  // ถ้าไม่ระบุ start_date -> ใช้วันที่ 1 ของเดือนที่แล้วเสมอ (ตามเวลากรุงเทพ)
   if (!start) {
-    start = fmt(now.year, now.month, 1);
+    let startYear = now.year;
+    let startMonth = now.month - 1;
+    if (startMonth < 1) {
+      startMonth = 12;
+      startYear -= 1;
+    }
+    start = fmt(startYear, startMonth, 1);
   }
 
   // ถ้าไม่ระบุ end_date -> ใช้วันนี้ (ตามเวลากรุงเทพ)
