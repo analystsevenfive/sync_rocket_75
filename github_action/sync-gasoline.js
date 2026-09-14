@@ -31,8 +31,8 @@ const TICKETS_SHEET_NAME = 'Tickets';
 const GASOLINE_SHEET_NAME = 'Gasoline Detail';
 const RATE_PER_JOB = 80;
 
-// ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 1 ของ 3 เดือนที่แล้วเสมอ (01/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
-// เพื่อให้ข้อมูลย้อนหลัง 3 เดือนและเดือนปัจจุบันถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ
+// ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 1 ของ 2 เดือนที่แล้วเสมอ (01/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
+// เพื่อให้ข้อมูลย้อนหลัง 2 เดือนและเดือนปัจจุบันถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ
 // รองรับ override ผ่าน environment variables (GASOLINE_START_DATE, GASOLINE_END_DATE) สำหรับยิงย้อนหลัง
 function computeDateRange(startOverride, endOverride, baseDate = new Date()) {
 
@@ -56,10 +56,10 @@ function computeDateRange(startOverride, endOverride, baseDate = new Date()) {
   let start = (startOverride || '').trim();
   let end = (endOverride || '').trim();
 
-  // ถ้าไม่ระบุ start_date -> ใช้วันที่ 1 ของ 3 เดือนที่แล้วเสมอ (ตามเวลากรุงเทพ)
+  // ถ้าไม่ระบุ start_date -> ใช้วันที่ 1 ของ 2 เดือนที่แล้วเสมอ (ตามเวลากรุงเทพ)
   if (!start) {
     let startYear = now.year;
-    let startMonth = now.month - 3;
+    let startMonth = now.month - 2;
     while (startMonth < 1) {
       startMonth += 12;
       startYear -= 1;
