@@ -91,18 +91,24 @@ test('gasoline keeps different technicians on separate rows and deduplicates rep
   assert.ok(state.writes.every(write => !write.range.includes('A3:')));
 });
 
-test('gasoline computeDateRange defaults to the 1st of last month and supports rollover across years', () => {
+test('gasoline computeDateRange defaults to the 1st of 3 months ago and supports rollover across years', () => {
   const script = loadScript('sync-gasoline.js');
-  // 11 September 2026 -> 01/08/2026 to 11/09/2026
+  // 11 September 2026 -> 01/06/2026 to 11/09/2026 (ย้อนหลัง 3 เดือน: มิ.ย. - ก.ย.)
   const sepDate = new Date('2026-09-11T08:00:00+07:00');
   const sepRange = script.computeDateRange('', '', sepDate);
-  assert.equal(sepRange.start, '01/08/2026');
+  assert.equal(sepRange.start, '01/06/2026');
   assert.equal(sepRange.end, '11/09/2026');
 
-  // Year rollover: 15 January 2027 -> 01/12/2026 to 15/01/2027
+  // Year rollover (Feb): 15 February 2027 -> 01/11/2026 to 15/02/2027
+  const febDate = new Date('2027-02-15T10:00:00+07:00');
+  const febRange = script.computeDateRange('', '', febDate);
+  assert.equal(febRange.start, '01/11/2026');
+  assert.equal(febRange.end, '15/02/2027');
+
+  // Year rollover (Jan): 15 January 2027 -> 01/10/2026 to 15/01/2027
   const janDate = new Date('2027-01-15T10:00:00+07:00');
   const janRange = script.computeDateRange('', '', janDate);
-  assert.equal(janRange.start, '01/12/2026');
+  assert.equal(janRange.start, '01/10/2026');
   assert.equal(janRange.end, '15/01/2027');
 
   // Override support
