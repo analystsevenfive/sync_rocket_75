@@ -32,7 +32,7 @@ const GASOLINE_SHEET_NAME = 'Gasoline Detail';
 const RATE_PER_JOB = 80;
 
 // ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 1 ของ 2 เดือนที่แล้วเสมอ (01/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
-// เพื่อให้ข้อมูลย้อนหลัง 2 เดือนและเดือนปัจจุบันถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ
+// เพื่อให้ข้อมูลย้อนหลัง 2 เดือนและเดือนปัจจุบันถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ (Sync Gasoline Detail)
 // รองรับ override ผ่าน environment variables (GASOLINE_START_DATE, GASOLINE_END_DATE) สำหรับยิงย้อนหลัง
 function computeDateRange(startOverride, endOverride, baseDate = new Date()) {
 

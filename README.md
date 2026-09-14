@@ -76,7 +76,7 @@ sync_rocket_75/
 | **`Tomorrow Technician Plan`** | `sync-tomorrow-plan.js` | 30 Parent / 30 Sub | พรุ่งนี้ (วันเดียว) | ใช้ **`date_type=2`** (ค้นหาจากวันที่นัดหมาย)<br>จัดเรียงตามเวลานัดหมาย (เช้า ➔ เย็น)<br>มี Prune (ถ้าพรุ่งนี้ไม่มีนัดหมาย ชีทจะว่าง) |
 | **`Yesterday’s Completed Jobs`** | `sync-yesterday-jobs.js` | 30 Parent / 30 Sub | เมื่อวาน (วันเดียว) | ใช้ **`date_type=2`** (ค้นหาจากวันที่นัดหมาย)<br>จัดเรียงตามเวลานัดหมาย (เช้า ➔ เย็น)<br>ดึงข้อมูลงานที่มีนัดหมายเมื่อวาน |
 | **`Employee`** | `sync-employee.js` | Sequential / AJAX | ผังองค์กรปัจจุบัน | ดึงข้อมูลผังองค์กรจาก `/hr/organization_chart.php`<br>ดึงคอลัมน์ `Position`, `Level`, `Employee ID`, `Full Name`, `Nickname`, `Desk` |
-| **`Gasoline Detail`** | `sync-gasoline.js` | 4 ทีม (Batch) | วันที่ 1 ของ 3 เดือนที่แล้ว - วันนี้ | ดึง `.xlsx` สรุปรายบุคคลของ 4 ทีม<br>ทำ Upsert คีย์ด้วย Ticket No (BK)<br>**All Technicians (Col F):** ดึงช่างทั้งหมดในงานจาก Trick2 หรือ Rocket<br>**Auto-Backfill:** หลัง sync ตรวจหาช่อง All Techs และ URL ที่ว่าง แล้วเติมให้อัตโนมัติ |
+| **`Gasoline Detail`** | `sync-gasoline.js` | 4 ทีม (Batch) | วันที่ 1 ของ 2 เดือนที่แล้ว - วันนี้ | ดึง `.xlsx` สรุปรายบุคคลของ 4 ทีม<br>ทำ Upsert คีย์ด้วย Ticket No (BK)<br>**All Technicians (Col F):** ดึงช่างทั้งหมดในงานจาก Trick2 หรือ Rocket<br>**Auto-Backfill:** หลัง sync ตรวจหาช่อง All Techs และ URL ที่ว่าง แล้วเติมให้อัตโนมัติ |
 | **`warning_card`** | `HR/RocketWarningCardSync.js` *(GAS)* | Sequential | 16/12/2025 - ปัจจุบัน | ดึงข้อมูลใบเตือนฝ่าย HR จาก `/hr/ajax/warning_card/Table.php` |
 
 ---
