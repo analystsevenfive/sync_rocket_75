@@ -289,11 +289,18 @@ test('installation plan accepts Thai and ISO appointment dates', () => {
   }
 });
 
-test('installation plan covers exactly seven days starting tomorrow in Bangkok', () => {
+test('installation plan covers seven days lookback in Bangkok', () => {
   const script = loadScript('sync-7day-installation-plan.js');
   const range = script.compute7DayPlanRangeBangkok(new Date('2026-09-09T13:30:00Z'));
-  assert.equal(range.start, '10/09/2026');
-  assert.equal(range.end, '16/09/2026');
+  assert.equal(range.start, '02/09/2026');
+  assert.equal(range.end, '09/09/2026');
+});
+
+test('installation plan supports start and end date overrides', () => {
+  const script = loadScript('sync-7day-installation-plan.js');
+  const range = script.compute7DayPlanRangeBangkok(new Date('2026-09-09T13:30:00Z'), '01/09/2026', '05/09/2026');
+  assert.equal(range.start, '01/09/2026');
+  assert.equal(range.end, '05/09/2026');
 });
 
 test('installation plan does not write salesperson value to sheet rows', () => {

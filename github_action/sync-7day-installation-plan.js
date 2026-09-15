@@ -1,7 +1,7 @@
 /*************************************************
  * SYNC 7-DAY INSTALLATION PLAN
  *
- * รายงานแผนงานติดตั้ง 7 วัน เริ่มจากวันพรุ่งนี้
+ * รายงานแผนงานติดตั้ง 7 วัน (ชั่วคราว: ย้อนหลัง 7 วันจากวันนี้)
  * ตามเวลากรุงเทพ (UTC+7)
  *
  * แหล่งข้อมูล: Rocket75 (search_type=3 สำหรับงานติดตั้ง IN, date_type=2 สำหรับวันที่นัดหมาย)
@@ -42,31 +42,55 @@ const HEADERS = [
 ];
 
 /**
- * คำนวณช่วง 7 วัน เริ่มพรุ่งนี้ถึงวันที่ 7 นับจากวันนี้ (เวลาประเทศไทย UTC+7)
+ * คำนวณช่วง 7 วัน ย้อนหลัง (เวลาประเทศไทย UTC+7)
+ * ชั่วคราว: ย้อนหลัง 7 วันนับจากวันนี้ ถึงวันนี้
+ * รองรับ override ผ่าน environment variables (PLAN_START_DATE, PLAN_END_DATE)
  */
-function compute7DayPlanRangeBangkok(now = new Date()) {
+function compute7DayPlanRangeBangkok(now = new Date(), startOverride = process.env.PLAN_START_DATE, endOverride = process.env.PLAN_END_DATE) {
   const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
   const bkkNow = new Date(utc + (7 * 3600000));
 
-  const startDateObj = new Date(bkkNow);
-  startDateObj.setDate(startDateObj.getDate() + 1);
-  const startYear = startDateObj.getFullYear();
-  const startMonth = startDateObj.getMonth() + 1;
-  const startDay = startDateObj.getDate();
-
-  const endDateObj = new Date(bkkNow);
-  endDateObj.setDate(endDateObj.getDate() + 7);
-  const endYear = endDateObj.getFullYear();
-  const endMonth = endDateObj.getMonth() + 1;
-  const endDay = endDateObj.getDate();
-
   const pad = n => String(n).padStart(2, '0');
 
+  let startDateObj;
+  let endDateObj;
+  let start;
+  let end;
+
+  if (startOverride && endOverride) {
+    const sParts = rocket.parseDateParts(String(startOverride).trim());
+    const eParts = rocket.parseDateParts(String(endOverride).trim());
+    if (sParts && eParts) {
+      startDateObj = new Date(sParts.year, sParts.month - 1, sParts.day, 0, 0, 0);
+      endDateObj = new Date(eParts.year, eParts.month - 1, eParts.day, 23, 59, 59);
+      start = `${pad(sParts.day)}/${pad(sParts.month)}/${sParts.year}`;
+      end = `${pad(eParts.day)}/${pad(eParts.month)}/${eParts.year}`;
+    }
+  }
+
+  if (!startDateObj || !endDateObj) {
+    startDateObj = new Date(bkkNow);
+    startDateObj.setDate(startDateObj.getDate() - 7);
+    const startYear = startDateObj.getFullYear();
+    const startMonth = startDateObj.getMonth() + 1;
+    const startDay = startDateObj.getDate();
+
+    endDateObj = new Date(bkkNow);
+    const endYear = endDateObj.getFullYear();
+    const endMonth = endDateObj.getMonth() + 1;
+    const endDay = endDateObj.getDate();
+
+    start = `${pad(startDay)}/${pad(startMonth)}/${startYear}`;
+    end = `${pad(endDay)}/${pad(endMonth)}/${endYear}`;
+    startDateObj = new Date(startYear, startMonth - 1, startDay, 0, 0, 0);
+    endDateObj = new Date(endYear, endMonth - 1, endDay, 23, 59, 59);
+  }
+
   return {
-    start: `${pad(startDay)}/${pad(startMonth)}/${startYear}`,
-    end: `${pad(endDay)}/${pad(endMonth)}/${endYear}`,
-    startDateObj: new Date(startYear, startMonth - 1, startDay, 0, 0, 0),
-    endDateObj: new Date(endYear, endMonth - 1, endDay, 23, 59, 59)
+    start: start,
+    end: end,
+    startDateObj: startDateObj,
+    endDateObj: endDateObj
   };
 }
 
@@ -223,7 +247,7 @@ async function main() {
   console.log('LOGIN OK');
 
   const range = compute7DayPlanRangeBangkok();
-  console.log(`ช่วงวันที่นัดหมาย (เริ่มพรุ่งนี้ 7 วัน): ${range.start} ถึง ${range.end}`);
+  console.log(`ช่วงวันที่นัดหมาย (ย้อนหลัง 7 วัน): ${range.start} ถึง ${range.end}`);
 
   // ==========================================
   // 1. ค้นหาตั๋วงานติดตั้ง (search_type=3, date_type=2)
@@ -320,7 +344,7 @@ async function main() {
       const ov = overviewMap[r.parentId] || {};
       const parsedAppt = parseAppointment(r.appointment);
 
-      // ตรวจสอบว่าวันนัดหมายอยู่ในช่วง [พรุ่งนี้, วันที่ 7 นับจากวันนี้]
+      // ตรวจสอบว่าวันนัดหมายอยู่ในช่วง [ย้อนหลัง 7 วัน, วันนี้]
       let inRange = false;
       if (parsedAppt.dateObj) {
         inRange = parsedAppt.dateObj >= range.startDateObj && parsedAppt.dateObj <= range.endDateObj;

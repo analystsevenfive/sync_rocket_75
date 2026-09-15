@@ -2,6 +2,15 @@ name: Sync 7-Day Installation Plan
 
 on:
   workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้ย้อนหลัง 7 วัน'
+        required: false
+        default: ''
+      end_date:
+        description: 'End date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันนี้'
+        required: false
+        default: ''
   push:
     paths:
       - 'github_action/sync-7day-installation-plan.js'
@@ -36,4 +45,6 @@ jobs:
           ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          PLAN_START_DATE: ${{ github.event.inputs.start_date }}
+          PLAN_END_DATE: ${{ github.event.inputs.end_date }}
         run: node sync-7day-installation-plan.js
