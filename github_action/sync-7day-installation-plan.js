@@ -1,7 +1,7 @@
 /*************************************************
  * SYNC 7-DAY INSTALLATION PLAN
  *
- * รายงานแผนงานติดตั้ง 7 วัน (ชั่วคราว: ย้อนหลัง 7 วันจากวันนี้)
+ * รายงานแผนงานติดตั้ง 7 วัน เริ่มจากวันพรุ่งนี้
  * ตามเวลากรุงเทพ (UTC+7)
  *
  * แหล่งข้อมูล: Rocket75 (search_type=3 สำหรับงานติดตั้ง IN, date_type=2 สำหรับวันที่นัดหมาย)
@@ -42,8 +42,7 @@ const HEADERS = [
 ];
 
 /**
- * คำนวณช่วง 7 วัน ย้อนหลัง (เวลาประเทศไทย UTC+7)
- * ชั่วคราว: ย้อนหลัง 7 วันนับจากวันนี้ ถึงวันนี้
+ * คำนวณช่วง 7 วัน เริ่มพรุ่งนี้ถึงวันที่ 7 นับจากวันนี้ (เวลาประเทศไทย UTC+7)
  * รองรับ override ผ่าน environment variables (PLAN_START_DATE, PLAN_END_DATE)
  */
 function compute7DayPlanRangeBangkok(now = new Date(), startOverride = process.env.PLAN_START_DATE, endOverride = process.env.PLAN_END_DATE) {
@@ -70,12 +69,13 @@ function compute7DayPlanRangeBangkok(now = new Date(), startOverride = process.e
 
   if (!startDateObj || !endDateObj) {
     startDateObj = new Date(bkkNow);
-    startDateObj.setDate(startDateObj.getDate() - 7);
+    startDateObj.setDate(startDateObj.getDate() + 1);
     const startYear = startDateObj.getFullYear();
     const startMonth = startDateObj.getMonth() + 1;
     const startDay = startDateObj.getDate();
 
     endDateObj = new Date(bkkNow);
+    endDateObj.setDate(endDateObj.getDate() + 7);
     const endYear = endDateObj.getFullYear();
     const endMonth = endDateObj.getMonth() + 1;
     const endDay = endDateObj.getDate();
@@ -247,7 +247,7 @@ async function main() {
   console.log('LOGIN OK');
 
   const range = compute7DayPlanRangeBangkok();
-  console.log(`ช่วงวันที่นัดหมาย (ย้อนหลัง 7 วัน): ${range.start} ถึง ${range.end}`);
+  console.log(`ช่วงวันที่นัดหมาย (เริ่มพรุ่งนี้ 7 วัน): ${range.start} ถึง ${range.end}`);
 
   // ==========================================
   // 1. ค้นหาตั๋วงานติดตั้ง (search_type=3, date_type=2)
@@ -344,7 +344,7 @@ async function main() {
       const ov = overviewMap[r.parentId] || {};
       const parsedAppt = parseAppointment(r.appointment);
 
-      // ตรวจสอบว่าวันนัดหมายอยู่ในช่วง [ย้อนหลัง 7 วัน, วันนี้]
+      // ตรวจสอบว่าวันนัดหมายอยู่ในช่วง [พรุ่งนี้, วันที่ 7 นับจากวันนี้]
       let inRange = false;
       if (parsedAppt.dateObj) {
         inRange = parsedAppt.dateObj >= range.startDateObj && parsedAppt.dateObj <= range.endDateObj;

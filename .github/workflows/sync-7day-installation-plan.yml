@@ -4,17 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       start_date:
-        description: 'Start date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้ย้อนหลัง 7 วัน'
+        description: 'Start date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้ 7 วันเริ่มพรุ่งนี้'
         required: false
         default: ''
       end_date:
-        description: 'End date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันนี้'
+        description: 'End date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันที่ 7 นับจากวันนี้'
         required: false
         default: ''
-  push:
-    paths:
-      - 'github_action/sync-7day-installation-plan.js'
-      - '.github/workflows/sync-7day-installation-plan.yml'
+  # push:
+  #   paths:
+  #     - 'github_action/sync-7day-installation-plan.js'
+  #     - '.github/workflows/sync-7day-installation-plan.yml'
   # schedule:
   #   # 06:00 เวลาไทย (UTC+7) = 23:00 UTC ของวันก่อนหน้า — วันละครั้ง
   #   - cron: '0 23 * * *'
