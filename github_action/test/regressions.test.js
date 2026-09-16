@@ -415,7 +415,7 @@ test('Tomorrow Plan, Yesterday Jobs, and Daily Repair include Product Code colum
   }
 });
 
-test('Daily Repair includes Status 1, Status 2, and Status 3 columns right after Active Stage', () => {
+test('Daily Repair includes Status 1 column right after Active Stage', () => {
   const file = path.join(__dirname, '..', 'sync-daily-repair.js');
   const scriptContent = fs.readFileSync(file, 'utf8');
 
@@ -425,31 +425,25 @@ test('Daily Repair includes Status 1, Status 2, and Status 3 columns right after
 
   const activeStageIdx = headers.indexOf('Active Stage');
   const status1Idx = headers.indexOf('Status 1');
-  const status2Idx = headers.indexOf('Status 2');
-  const status3Idx = headers.indexOf('Status 3');
   const salesInvoiceIdx = headers.indexOf('Sales Invoice No.');
 
   assert.ok(activeStageIdx !== -1, "headers must include 'Active Stage'");
   assert.equal(status1Idx, activeStageIdx + 1, "'Status 1' must be right after 'Active Stage'");
-  assert.equal(status2Idx, status1Idx + 1, "'Status 2' must be right after 'Status 1'");
-  assert.equal(status3Idx, status2Idx + 1, "'Status 3' must be right after 'Status 2'");
-  assert.equal(salesInvoiceIdx, status3Idx + 1, "'Sales Invoice No.' must be right after 'Status 3'");
+  assert.equal(salesInvoiceIdx, status1Idx + 1, "'Sales Invoice No.' must be right after 'Status 1'");
+  assert.equal(headers.indexOf('Status 2'), -1, "headers must not include 'Status 2'");
+  assert.equal(headers.indexOf('Status 3'), -1, "headers must not include 'Status 3'");
 
   const script = loadScript('sync-daily-repair.js');
   const sampleTicket = {
     ticketId: '100',
     ticketNo: 'BK100.R01',
     activeStage: 'งานจบ',
-    status1: 'รอตรวจงาน',
-    status2: 'ตรวจงานแล้ว',
-    status3: 'รอเปิดบิล',
+    status1: 'รอเข้างาน',
     salesInvoiceNo: 'IV12345'
   };
   const row = script.jobToRow(sampleTicket, '2026-09-16 08:00:00');
   assert.equal(row.length, headers.length, `Row column count (${row.length}) must match headers length (${headers.length})`);
-  assert.equal(row[status1Idx], 'รอตรวจงาน');
-  assert.equal(row[status2Idx], 'ตรวจงานแล้ว');
-  assert.equal(row[status3Idx], 'รอเปิดบิล');
+  assert.equal(row[status1Idx], 'รอเข้างาน');
 
   // Test extractParentToStatusesMap
   const sampleTableHtml = `

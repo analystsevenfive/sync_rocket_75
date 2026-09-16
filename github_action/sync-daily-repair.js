@@ -30,8 +30,6 @@ const HEADERS = [
   'Inspection Status',
   'Active Stage',
   'Status 1',
-  'Status 2',
-  'Status 3',
   'Sales Invoice No.',
   'Customer',
   'Branch',
@@ -70,8 +68,6 @@ function jobToRow(d, lastSync) {
     d.inspectionStatus || '',
     d.activeStage || '',
     d.status1 || '',
-    d.status2 || '',
-    d.status3 || '',
     forceTextIfNumeric(d.salesInvoiceNo),
     d.customer,
     d.branch,
@@ -294,27 +290,17 @@ async function main() {
       });
     }
 
-    // แมป Status 1, Status 2, Status 3
+    // แมป Status 1
     todayTickets.forEach(function(t) {
       const parentNo = (t.parentTicketNo || (t.ticketNo ? t.ticketNo.replace(/\.[A-Z0-9]+$/i, '') : '')).trim();
       const pStatuses = parentToStatusesMap[String(t.parentTicketId)] ||
                         parentToStatusesMap[parentNo] ||
                         [];
-      const pid = String(t.parentTicketId || t.ticketId);
 
       // Status 1: จากหน้าใบงานย่อย (ticket.status) หรือ fallback จาก badge ตัวแรกของ parent
       const validSubStatus = (t.status && t.status.toLowerCase() !== 'active') ? t.status : '';
       const validP0 = (pStatuses[0] && pStatuses[0].toLowerCase() !== 'active') ? pStatuses[0] : '';
       t.status1 = validSubStatus || validP0 || '';
-
-      // Status 2: จาก badge ตัวที่ 2 ของ parent table หรือ parent page overallStatus
-      const validP1 = (pStatuses[1] && pStatuses[1].toLowerCase() !== 'active') ? pStatuses[1] : '';
-      const validOverall = (parentOverallStatusMap[pid] && parentOverallStatusMap[pid].toLowerCase() !== 'active') ? parentOverallStatusMap[pid] : '';
-      t.status2 = validP1 || validOverall || '';
-
-      // Status 3: จาก badge ตัวที่ 3 ของ parent table (เช่น "รอเปิดบิล")
-      const validP2 = (pStatuses[2] && pStatuses[2].toLowerCase() !== 'active') ? pStatuses[2] : '';
-      t.status3 = validP2 || '';
     });
 
     // แมป parentTicketId -> productId
