@@ -788,6 +788,42 @@ async function getTicketDetailHtml(ticketId, auth) {
 
 
 
+function extractTicketStatus(html) {
+  if (!html || typeof html !== 'string') {
+    return '';
+  }
+
+  // ข้าม header/navbar/user profile ด้านบนของหน้า (ซึ่งมี badge "Active" ของบัญชีผู้ใช้)
+  // โดยเริ่มค้นหาหลังจาก breadcrumbs ('รายการ Ticket') หรือ tag <h1>
+  const bIdx = html.indexOf('รายการ Ticket');
+  const hIdx = html.indexOf('<h1');
+  const startIdx = bIdx !== -1 ? bIdx : (hIdx !== -1 ? hIdx : 0);
+  const contentHtml = html.substring(startIdx);
+
+  // 1. ลองหาจาก d-flex align-items-center ในเนื้อหาตั๋ว
+  const dflexMatch = contentHtml.match(/d-flex align-items-center[^\n\r]*?[\s\S]*?<span[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/span>/i);
+  if (dflexMatch) {
+    const candidate = cleanText(dflexMatch[1].replace(/<[^>]+>/g, ''));
+    if (candidate && candidate.toLowerCase() !== 'active') {
+      return candidate;
+    }
+  }
+
+  // 2. ค้นหา badge แรกใน contentHtml ที่ไม่ใช่ "Active"
+  const badgeRegex = /<(?:span|label|div)[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|label|div)>/gi;
+  let m;
+  while ((m = badgeRegex.exec(contentHtml)) !== null) {
+    const candidate = cleanText(m[1].replace(/<[^>]+>/g, ''));
+    if (candidate && candidate.toLowerCase() !== 'active') {
+      return candidate;
+    }
+  }
+
+  return '';
+}
+
+
+
 function parseTicketDetail(html, ticketId) {
 
   // เดิมเดารูปแบบเลขตั๋วด้วย regex (hardcode ต่อท้าย ".R<เลข>"
@@ -808,17 +844,14 @@ function parseTicketDetail(html, ticketId) {
 
   const appointment = extractBeforeLabel(html, 'เวลานัดหมาย');
 
-  const status = extractRegex(
-    html,
-    /d-flex align-items-center mb-1[\s\S]*?<span[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
-  );
+  const status = extractTicketStatus(html);
 
   return {
     ticketId: ticketId,
     parentTicketId: parentId,
     parentTicketNo: parentTicketNo,
     ticketNo: cleanText(ticketNo),
-    status: cleanText(status),
+    status: status,
     appointment: cleanText(appointment),
 
     reportDate: getDtValue(html, 'วันที่แจ้ง'),
@@ -1310,5 +1343,6 @@ module.exports = {
   extractBeforeLabel,
   extractRelatedPerson,
   extractLastBreadcrumbText,
-  extractRegex
+  extractRegex,
+  extractTicketStatus
 };

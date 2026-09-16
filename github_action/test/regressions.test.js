@@ -482,3 +482,45 @@ test('Daily Repair includes Status 1, Status 2, and Status 3 columns right after
   assert.deepEqual([...statusMap['3098718049']], ['รอเข้าซ่อม']);
 });
 
+test('parseTicketDetail extracts real status (e.g. รอเข้างาน) and ignores user profile Active badge', () => {
+  const samplePageHtml = `
+    <!DOCTYPE html>
+    <html>
+      <body>
+        <!-- Top Navbar with User Profile Status -->
+        <div class="d-flex align-items-center mb-1">
+          <a href="#" class="text-gray-800">Admin User</a>
+          <span class="badge badge-light-success">Active</span>
+        </div>
+
+        <!-- Breadcrumb -->
+        <h1>SMRM0926-000342.R01</h1>
+        <ul class="breadcrumb">
+          <li>หน้าหลัก</li>
+          <li>รายการ Ticket</li>
+          <li><a href="ticket_view.php?id=0422663501">SMRM0926-000342</a></li>
+          <li>SMRM0926-000342.R01</li>
+        </ul>
+
+        <!-- Ticket Card Header -->
+        <div class="card">
+          <div class="d-flex align-items-center mb-1">
+            <div class="fs-2 fw-bold">สมุย เซเว่นไฟว์ - บจก.สมุย เซเว่นไฟว์</div>
+            <span class="badge badge-light-primary ms-2">รอเข้างาน</span>
+          </div>
+          <div class="card-body">
+            <h5>เวลานัดหมาย</h5>
+            <p>16 Sep 2026 08:00</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const parsed = rocket.parseTicketDetail(samplePageHtml, '0422663501');
+  assert.equal(parsed.ticketNo, 'SMRM0926-000342.R01');
+  assert.equal(parsed.status, 'รอเข้างาน');
+  assert.equal(rocket.extractTicketStatus(samplePageHtml), 'รอเข้างาน');
+});
+
+

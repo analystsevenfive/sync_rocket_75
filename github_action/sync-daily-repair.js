@@ -283,10 +283,7 @@ async function main() {
       await rocket.mapConcurrentStrict(missingStageParents, 20, async function(parentId) {
         const pHtml = await rocket.getParentPageHtml(parentId, auth);
         parentStageMap[String(parentId)] = rocket.parseCurrentJobType(pHtml);
-        parentOverallStatusMap[String(parentId)] = rocket.cleanText(rocket.extractRegex(
-          pHtml,
-          /d-flex align-items-center mb-1[\s\S]*?<span[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
-        ));
+        parentOverallStatusMap[String(parentId)] = rocket.extractTicketStatus(pHtml);
       });
 
       todayTickets.forEach(function(t) {
@@ -306,13 +303,18 @@ async function main() {
       const pid = String(t.parentTicketId || t.ticketId);
 
       // Status 1: จากหน้าใบงานย่อย (ticket.status) หรือ fallback จาก badge ตัวแรกของ parent
-      t.status1 = t.status || pStatuses[0] || '';
+      const validSubStatus = (t.status && t.status.toLowerCase() !== 'active') ? t.status : '';
+      const validP0 = (pStatuses[0] && pStatuses[0].toLowerCase() !== 'active') ? pStatuses[0] : '';
+      t.status1 = validSubStatus || validP0 || '';
 
       // Status 2: จาก badge ตัวที่ 2 ของ parent table หรือ parent page overallStatus
-      t.status2 = pStatuses[1] || parentOverallStatusMap[pid] || '';
+      const validP1 = (pStatuses[1] && pStatuses[1].toLowerCase() !== 'active') ? pStatuses[1] : '';
+      const validOverall = (parentOverallStatusMap[pid] && parentOverallStatusMap[pid].toLowerCase() !== 'active') ? parentOverallStatusMap[pid] : '';
+      t.status2 = validP1 || validOverall || '';
 
       // Status 3: จาก badge ตัวที่ 3 ของ parent table (เช่น "รอเปิดบิล")
-      t.status3 = pStatuses[2] || '';
+      const validP2 = (pStatuses[2] && pStatuses[2].toLowerCase() !== 'active') ? pStatuses[2] : '';
+      t.status3 = validP2 || '';
     });
 
     // แมป parentTicketId -> productId
