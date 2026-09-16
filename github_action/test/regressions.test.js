@@ -377,3 +377,40 @@ test('upgraded Google client sends authenticated snapshot requests with the expe
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('Tomorrow Plan, Yesterday Jobs, and Daily Repair include Product Code column before Product Name', () => {
+  const scripts = [
+    { name: 'sync-tomorrow-plan.js', toRowFn: 'planToRow' },
+    { name: 'sync-yesterday-jobs.js', toRowFn: 'jobToRow' },
+    { name: 'sync-daily-repair.js', toRowFn: 'jobToRow' }
+  ];
+
+  for (const { name, toRowFn } of scripts) {
+    const file = path.join(__dirname, '..', name);
+    const scriptContent = fs.readFileSync(file, 'utf8');
+
+    // Extract headers array from source
+    const headerMatch = scriptContent.match(/const\s+(?:PLAN_)?HEADERS\s*=\s*\[([\s\S]*?)\];/);
+    assert.ok(headerMatch, `${name} has HEADERS definition`);
+    const headers = eval(`[${headerMatch[1]}]`);
+
+    const codeIdx = headers.indexOf('Product Code');
+    const nameIdx = headers.indexOf('Product Name');
+    assert.ok(codeIdx !== -1, `${name} must include 'Product Code' header`);
+    assert.ok(nameIdx !== -1, `${name} must include 'Product Name' header`);
+    assert.equal(codeIdx, nameIdx - 1, `'Product Code' must be right before 'Product Name' in ${name}`);
+
+    // Test row mapping alignment
+    const script = loadScript(name);
+    const sampleTicket = {
+      ticketId: '100',
+      ticketNo: 'BK100',
+      productCode: 'NTS1-EWB-24',
+      productName: 'Sample Product'
+    };
+    const row = script[toRowFn](sampleTicket, '2026-09-16 08:00:00');
+    assert.equal(row.length, headers.length, `Row column count (${row.length}) must match headers length (${headers.length}) in ${name}`);
+    assert.equal(row[codeIdx], 'NTS1-EWB-24', `Row must have productCode at index ${codeIdx}`);
+    assert.equal(row[nameIdx], 'Sample Product', `Row must have productName at index ${nameIdx}`);
+  }
+});
