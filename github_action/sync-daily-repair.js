@@ -31,6 +31,7 @@ const HEADERS = [
   'Active Stage',
   'Status 1',
   'Status 2',
+  'Status 3',
   'Sales Invoice No.',
   'Customer',
   'Branch',
@@ -70,6 +71,7 @@ function jobToRow(d, lastSync) {
     d.activeStage || '',
     d.status1 || '',
     d.status2 || '',
+    d.status3 || '',
     forceTextIfNumeric(d.salesInvoiceNo),
     d.customer,
     d.branch,
@@ -115,25 +117,26 @@ function extractParentToStatusesMap(html) {
 
     if (cells.length > 4) {
       const statusCell = cells[4];
-      const badgeRegex = /<(?:span|label|div)[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|label|div)>/gi;
+      const badgeRegex = /<(?:span|label|div|button|a)[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|label|div|button|a)>/gi;
       let badgeMatch;
       const statuses = [];
       while ((badgeMatch = badgeRegex.exec(statusCell)) !== null) {
         const text = rocket.cleanText(badgeMatch[1].replace(/<[^>]+>/g, ''));
-        if (text) statuses.push(text);
+        if (text && text.toLowerCase() !== 'active') statuses.push(text);
       }
       if (statuses.length === 0) {
         const lines = statusCell
           .split(/<br\s*\/?>/i)
           .map(function(s) { return rocket.cleanText(s.replace(/<[^>]+>/g, '')); })
-          .filter(Boolean);
+          .filter(function(s) { return s && s.toLowerCase() !== 'active'; });
         statuses.push(...lines);
       }
 
-      if (statuses.length > 0) {
-        map[parentId] = statuses;
+      const uniqueStatuses = [...new Set(statuses)];
+      if (uniqueStatuses.length > 0) {
+        map[parentId] = uniqueStatuses;
         if (parentTicketNo) {
-          map[parentTicketNo] = statuses;
+          map[parentTicketNo] = uniqueStatuses;
         }
       }
     }
@@ -293,7 +296,7 @@ async function main() {
       });
     }
 
-    // แมป Status 1 และ Status 2
+    // แมป Status 1, Status 2 และ Status 3
     todayTickets.forEach(function(t) {
       const parentNo = (t.parentTicketNo || (t.ticketNo ? t.ticketNo.replace(/\.[A-Z0-9]+$/i, '') : '')).trim();
       const pStatuses = parentToStatusesMap[String(t.parentTicketId)] ||
@@ -319,6 +322,15 @@ async function main() {
       }
       const validP1 = (pStatuses[1] && pStatuses[1].toLowerCase() !== 'active') ? pStatuses[1] : '';
       t.status2 = t.status2 || validP1 || '';
+
+      // Status 3: จากคอลัมน์สถานะในตาราง ticket_list.php (getTable.php)
+      const validParentStatuses = pStatuses.filter(function(s) {
+        return s && s.toLowerCase() !== 'active';
+      });
+      t.status3 = validParentStatuses.join(', ');
+      if (!t.status3 && parentOverallStatusMap[String(t.parentTicketId)]) {
+        t.status3 = parentOverallStatusMap[String(t.parentTicketId)];
+      }
     });
 
     // แมป parentTicketId -> productId
