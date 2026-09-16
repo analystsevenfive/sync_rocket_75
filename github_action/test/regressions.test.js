@@ -415,7 +415,7 @@ test('Tomorrow Plan, Yesterday Jobs, and Daily Repair include Product Code colum
   }
 });
 
-test('Daily Repair includes Status 1 column right after Active Stage', () => {
+test('Daily Repair includes Status 1 and Status 2 columns right after Active Stage', () => {
   const file = path.join(__dirname, '..', 'sync-daily-repair.js');
   const scriptContent = fs.readFileSync(file, 'utf8');
 
@@ -425,12 +425,13 @@ test('Daily Repair includes Status 1 column right after Active Stage', () => {
 
   const activeStageIdx = headers.indexOf('Active Stage');
   const status1Idx = headers.indexOf('Status 1');
+  const status2Idx = headers.indexOf('Status 2');
   const salesInvoiceIdx = headers.indexOf('Sales Invoice No.');
 
   assert.ok(activeStageIdx !== -1, "headers must include 'Active Stage'");
   assert.equal(status1Idx, activeStageIdx + 1, "'Status 1' must be right after 'Active Stage'");
-  assert.equal(salesInvoiceIdx, status1Idx + 1, "'Sales Invoice No.' must be right after 'Status 1'");
-  assert.equal(headers.indexOf('Status 2'), -1, "headers must not include 'Status 2'");
+  assert.equal(status2Idx, status1Idx + 1, "'Status 2' must be right after 'Status 1'");
+  assert.equal(salesInvoiceIdx, status2Idx + 1, "'Sales Invoice No.' must be right after 'Status 2'");
   assert.equal(headers.indexOf('Status 3'), -1, "headers must not include 'Status 3'");
 
   const script = loadScript('sync-daily-repair.js');
@@ -439,11 +440,32 @@ test('Daily Repair includes Status 1 column right after Active Stage', () => {
     ticketNo: 'BK100.R01',
     activeStage: 'งานจบ',
     status1: 'รอเข้างาน',
+    status2: 'กำลังซ่อม',
     salesInvoiceNo: 'IV12345'
   };
   const row = script.jobToRow(sampleTicket, '2026-09-16 08:00:00');
   assert.equal(row.length, headers.length, `Row column count (${row.length}) must match headers length (${headers.length})`);
   assert.equal(row[status1Idx], 'รอเข้างาน');
+  assert.equal(row[status2Idx], 'กำลังซ่อม');
+
+  // Test extractCheckRepairInfo extracts Status 2 (cells[3])
+  const sampleCheckRepairHtml = `
+    <table>
+      <tr>
+        <td>BKRM0926-000346.R01<br>งานซ่อม</td>
+        <td>ทีม : A (BK)<br>นัดหมาย : 16/09/2026 11:00</td>
+        <td>ชรรศ ก้อนทอง ทีม A (BK)</td>
+        <td><button class="btn btn-sm btn-primary">กำลังซ่อม</button></td>
+        <td><a href="ticket_checkrepair_view.php?id=1922649850" class="btn btn-sm btn-icon"><i class="fa fa-eye"></i></a></td>
+      </tr>
+    </table>
+  `;
+  const infoMap = rocket.extractCheckRepairInfo(sampleCheckRepairHtml);
+  assert.ok(infoMap['1922649850'], 'must find sub-ticket info by subId');
+  assert.equal(infoMap['1922649850'].status, 'กำลังซ่อม');
+  assert.equal(infoMap['BKRM0926-000346.R01'].status, 'กำลังซ่อม');
+  assert.equal(infoMap['1922649850'].team, 'A (BK)');
+  assert.equal(infoMap['1922649850'].technicians, 'ชรรศ ก้อนทอง');
 
   // Test extractParentToStatusesMap
   const sampleTableHtml = `

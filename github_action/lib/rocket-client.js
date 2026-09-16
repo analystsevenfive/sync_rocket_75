@@ -704,13 +704,19 @@ function extractCheckRepairIds(html) {
 function extractCheckRepairInfo(html) {
 
   const info = {};
-  const rowRegex = /<tr\s+id=["']tr_(\d+)["'][^>]*>([\s\S]*?)<\/tr>/gi;
+  const rowRegex = /<tr([^>]*)>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
 
   while ((rowMatch = rowRegex.exec(html)) !== null) {
 
-    const subId = rowMatch[1];
+    const trAttrs = rowMatch[1] || '';
     const rowHtml = rowMatch[2];
+
+    const trIdMatch = trAttrs.match(/id=["']tr_(\d+)["']/i);
+    const linkMatch = rowHtml.match(/ticket_checkrepair_view(?:_fast)?\.php\?id=(\d+)/i) ||
+                      rowHtml.match(/id=(\d+)/i);
+    const subId = trIdMatch ? trIdMatch[1] : (linkMatch ? linkMatch[1] : null);
+    if (!subId) continue;
 
     const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     const cells = [];
@@ -742,11 +748,15 @@ function extractCheckRepairInfo(html) {
     const ticketNoMatch = cells[0] ? cells[0].match(/([A-Z0-9-]+\.[A-Z0-9]+)/i) : null;
     const ticketNo = ticketNoMatch ? cleanText(ticketNoMatch[1]) : '';
 
+    const statusCell = cells[3] || '';
+    const status = cleanText(statusCell.replace(/<[^>]+>/g, ''));
+
     const subInfo = {
       subId: subId,
       ticketNo: ticketNo,
       team: team,
-      technicians: technicians.join(', ')
+      technicians: technicians.join(', '),
+      status: status
     };
 
     info[subId] = subInfo;

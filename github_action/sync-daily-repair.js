@@ -30,6 +30,7 @@ const HEADERS = [
   'Inspection Status',
   'Active Stage',
   'Status 1',
+  'Status 2',
   'Sales Invoice No.',
   'Customer',
   'Branch',
@@ -68,6 +69,7 @@ function jobToRow(d, lastSync) {
     d.inspectionStatus || '',
     d.activeStage || '',
     d.status1 || '',
+    d.status2 || '',
     forceTextIfNumeric(d.salesInvoiceNo),
     d.customer,
     d.branch,
@@ -209,9 +211,10 @@ async function main() {
       if (!ticket.ticketNo && !ticket.status) {
         throw new Error('หน้าที่ได้ไม่ใช่ ticket detail จริง (parse ไม่สำเร็จ)');
       }
-      const info = infoMap[String(subId)] || {};
+      const info = infoMap[String(subId)] || (ticket.ticketNo ? infoMap[ticket.ticketNo] : null) || {};
       ticket.technician = info.technicians || ticket.technician || '';
       ticket.team = info.team || '';
+      ticket.status2 = info.status || '';
       return ticket;
     });
 
@@ -290,7 +293,7 @@ async function main() {
       });
     }
 
-    // แมป Status 1
+    // แมป Status 1 และ Status 2
     todayTickets.forEach(function(t) {
       const parentNo = (t.parentTicketNo || (t.ticketNo ? t.ticketNo.replace(/\.[A-Z0-9]+$/i, '') : '')).trim();
       const pStatuses = parentToStatusesMap[String(t.parentTicketId)] ||
@@ -301,6 +304,21 @@ async function main() {
       const validSubStatus = (t.status && t.status.toLowerCase() !== 'active') ? t.status : '';
       const validP0 = (pStatuses[0] && pStatuses[0].toLowerCase() !== 'active') ? pStatuses[0] : '';
       t.status1 = validSubStatus || validP0 || '';
+
+      // Status 2: จาก checkrepair.php (infoMap) หรือ fallback จาก badge ตัวที่สองของ parent
+      if (!t.status2) {
+        const sid = String(t.ticketId);
+        const tNo = t.ticketNo || '';
+        const info = infoMap[sid] || (tNo ? infoMap[tNo] : null);
+        if (info && info.status) {
+          t.status2 = info.status;
+        }
+      }
+      if (t.status2 && t.status2.toLowerCase() === 'active') {
+        t.status2 = '';
+      }
+      const validP1 = (pStatuses[1] && pStatuses[1].toLowerCase() !== 'active') ? pStatuses[1] : '';
+      t.status2 = t.status2 || validP1 || '';
     });
 
     // แมป parentTicketId -> productId
