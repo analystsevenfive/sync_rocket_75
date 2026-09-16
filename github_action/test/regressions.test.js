@@ -414,3 +414,71 @@ test('Tomorrow Plan, Yesterday Jobs, and Daily Repair include Product Code colum
     assert.equal(row[nameIdx], 'Sample Product', `Row must have productName at index ${nameIdx}`);
   }
 });
+
+test('Daily Repair includes Status 1, Status 2, and Status 3 columns right after Active Stage', () => {
+  const file = path.join(__dirname, '..', 'sync-daily-repair.js');
+  const scriptContent = fs.readFileSync(file, 'utf8');
+
+  const headerMatch = scriptContent.match(/const\s+HEADERS\s*=\s*\[([\s\S]*?)\];/);
+  assert.ok(headerMatch, 'sync-daily-repair.js has HEADERS definition');
+  const headers = eval(`[${headerMatch[1]}]`);
+
+  const activeStageIdx = headers.indexOf('Active Stage');
+  const status1Idx = headers.indexOf('Status 1');
+  const status2Idx = headers.indexOf('Status 2');
+  const status3Idx = headers.indexOf('Status 3');
+  const salesInvoiceIdx = headers.indexOf('Sales Invoice No.');
+
+  assert.ok(activeStageIdx !== -1, "headers must include 'Active Stage'");
+  assert.equal(status1Idx, activeStageIdx + 1, "'Status 1' must be right after 'Active Stage'");
+  assert.equal(status2Idx, status1Idx + 1, "'Status 2' must be right after 'Status 1'");
+  assert.equal(status3Idx, status2Idx + 1, "'Status 3' must be right after 'Status 2'");
+  assert.equal(salesInvoiceIdx, status3Idx + 1, "'Sales Invoice No.' must be right after 'Status 3'");
+
+  const script = loadScript('sync-daily-repair.js');
+  const sampleTicket = {
+    ticketId: '100',
+    ticketNo: 'BK100.R01',
+    activeStage: 'งานจบ',
+    status1: 'รอตรวจงาน',
+    status2: 'ตรวจงานแล้ว',
+    status3: 'รอเปิดบิล',
+    salesInvoiceNo: 'IV12345'
+  };
+  const row = script.jobToRow(sampleTicket, '2026-09-16 08:00:00');
+  assert.equal(row.length, headers.length, `Row column count (${row.length}) must match headers length (${headers.length})`);
+  assert.equal(row[status1Idx], 'รอตรวจงาน');
+  assert.equal(row[status2Idx], 'ตรวจงานแล้ว');
+  assert.equal(row[status3Idx], 'รอเปิดบิล');
+
+  // Test extractParentToStatusesMap
+  const sampleTableHtml = `
+    <table>
+      <tr>
+        <td><a href="ticket_view.php?id=3098718035">BKRM0926-000350</a></td>
+        <td>Creator</td>
+        <td>Customer</td>
+        <td>Machine</td>
+        <td>
+          <span class="badge badge-success">ซ่อมเสร็จแล้ว</span>
+          <span class="badge badge-success">ตรวจงานแล้ว</span>
+          <span class="badge badge-primary">รอเปิดบิล</span>
+        </td>
+      </tr>
+      <tr>
+        <td><a href="ticket_view.php?id=3098718049">BKRM0926-000349</a></td>
+        <td>Creator</td>
+        <td>Customer</td>
+        <td>Machine</td>
+        <td>
+          <span class="badge badge-info">รอเข้าซ่อม</span>
+        </td>
+      </tr>
+    </table>
+  `;
+  const statusMap = script.extractParentToStatusesMap(sampleTableHtml);
+  assert.deepEqual([...statusMap['3098718035']], ['ซ่อมเสร็จแล้ว', 'ตรวจงานแล้ว', 'รอเปิดบิล']);
+  assert.deepEqual([...statusMap['BKRM0926-000350']], ['ซ่อมเสร็จแล้ว', 'ตรวจงานแล้ว', 'รอเปิดบิล']);
+  assert.deepEqual([...statusMap['3098718049']], ['รอเข้าซ่อม']);
+});
+

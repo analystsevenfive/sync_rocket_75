@@ -29,6 +29,9 @@ const HEADERS = [
   'End Time',
   'Inspection Status',
   'Active Stage',
+  'Status 1',
+  'Status 2',
+  'Status 3',
   'Sales Invoice No.',
   'Customer',
   'Branch',
@@ -66,6 +69,9 @@ function jobToRow(d, lastSync) {
     d.endTime || '',
     d.inspectionStatus || '',
     d.activeStage || '',
+    d.status1 || '',
+    d.status2 || '',
+    d.status3 || '',
     forceTextIfNumeric(d.salesInvoiceNo),
     d.customer,
     d.branch,
@@ -81,6 +87,61 @@ function jobToRow(d, lastSync) {
     d.url,
     lastSync
   ];
+}
+
+
+
+function extractParentToStatusesMap(html) {
+  const map = {};
+  if (!html || typeof html !== 'string') {
+    return map;
+  }
+
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch;
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const rHtml = rowMatch[1];
+    const pMatch = rHtml.match(/ticket_view\.php\?id=(\d+)/i);
+    if (!pMatch) continue;
+    const parentId = pMatch[1];
+
+    const ticketNoMatch = rHtml.match(/([A-Z]{2,4}[0-9]{4}-[0-9]+)/i);
+    const parentTicketNo = ticketNoMatch ? ticketNoMatch[1] : '';
+
+    const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    const cells = [];
+    let cm;
+    while ((cm = cellRegex.exec(rHtml)) !== null) {
+      cells.push(cm[1]);
+    }
+
+    if (cells.length > 4) {
+      const statusCell = cells[4];
+      const badgeRegex = /<(?:span|label|div)[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|label|div)>/gi;
+      let badgeMatch;
+      const statuses = [];
+      while ((badgeMatch = badgeRegex.exec(statusCell)) !== null) {
+        const text = rocket.cleanText(badgeMatch[1].replace(/<[^>]+>/g, ''));
+        if (text) statuses.push(text);
+      }
+      if (statuses.length === 0) {
+        const lines = statusCell
+          .split(/<br\s*\/?>/i)
+          .map(function(s) { return rocket.cleanText(s.replace(/<[^>]+>/g, '')); })
+          .filter(Boolean);
+        statuses.push(...lines);
+      }
+
+      if (statuses.length > 0) {
+        map[parentId] = statuses;
+        if (parentTicketNo) {
+          map[parentTicketNo] = statuses;
+        }
+      }
+    }
+  }
+
+  return map;
 }
 
 
@@ -103,7 +164,8 @@ async function main() {
   const parentIds = rocket.extractParentTicketIds(parentHtml);
   const parentToProductMap = rocket.extractParentToProductIdMap(parentHtml);
   const parentToCustomerCodeMap = rocket.extractParentToCustomerCodeMap(parentHtml);
-  console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length + ' (แมป Product ID ได้: ' + Object.keys(parentToProductMap).length + ', Customer Code ได้: ' + Object.keys(parentToCustomerCodeMap).length + ')');
+  const parentToStatusesMap = extractParentToStatusesMap(parentHtml);
+  console.log('PARENT TICKETS ที่พบจากการค้นหา: ' + parentIds.length + ' (แมป Product ID ได้: ' + Object.keys(parentToProductMap).length + ', Customer Code ได้: ' + Object.keys(parentToCustomerCodeMap).length + ', Statuses ได้: ' + Object.keys(parentToStatusesMap).length + ')');
 
   // ==========================================
   // 2. CANDIDATE SUB TICKETS + ช่าง/ทีม ต่อ parent
@@ -214,12 +276,17 @@ async function main() {
       .filter(function(t) { return !t.activeStage && (t.parentTicketId || t.ticketId); })
       .map(function(t) { return t.parentTicketId || t.ticketId; }))];
 
+    const parentOverallStatusMap = {};
     if (missingStageParents.length > 0) {
       console.log('กำลังดึง Active Stage เพิ่มเติมจาก ticket_view สำหรับ ' + missingStageParents.length + ' parent tickets...');
       const parentStageMap = {};
       await rocket.mapConcurrentStrict(missingStageParents, 20, async function(parentId) {
         const pHtml = await rocket.getParentPageHtml(parentId, auth);
         parentStageMap[String(parentId)] = rocket.parseCurrentJobType(pHtml);
+        parentOverallStatusMap[String(parentId)] = rocket.cleanText(rocket.extractRegex(
+          pHtml,
+          /d-flex align-items-center mb-1[\s\S]*?<span[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
+        ));
       });
 
       todayTickets.forEach(function(t) {
@@ -229,6 +296,24 @@ async function main() {
         }
       });
     }
+
+    // แมป Status 1, Status 2, Status 3
+    todayTickets.forEach(function(t) {
+      const parentNo = (t.parentTicketNo || (t.ticketNo ? t.ticketNo.replace(/\.[A-Z0-9]+$/i, '') : '')).trim();
+      const pStatuses = parentToStatusesMap[String(t.parentTicketId)] ||
+                        parentToStatusesMap[parentNo] ||
+                        [];
+      const pid = String(t.parentTicketId || t.ticketId);
+
+      // Status 1: จากหน้าใบงานย่อย (ticket.status) หรือ fallback จาก badge ตัวแรกของ parent
+      t.status1 = t.status || pStatuses[0] || '';
+
+      // Status 2: จาก badge ตัวที่ 2 ของ parent table หรือ parent page overallStatus
+      t.status2 = pStatuses[1] || parentOverallStatusMap[pid] || '';
+
+      // Status 3: จาก badge ตัวที่ 3 ของ parent table (เช่น "รอเปิดบิล")
+      t.status3 = pStatuses[2] || '';
+    });
 
     // แมป parentTicketId -> productId
     todayTickets.forEach(function(t) {
