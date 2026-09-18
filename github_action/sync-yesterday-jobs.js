@@ -91,6 +91,29 @@ function jobToRow(d, lastSync) {
 
 
 
+function computeTargetDateRange(overrideDate, baseDate = new Date()) {
+  const raw = (overrideDate || '').trim();
+  if (raw) {
+    let rawDate = raw;
+    // ถ้าใส่มาแค่ D/M หรือ DD/MM เช่น 3/9 ให้เติมปีปัจจุบันอัตโนมัติ
+    if (/^\d{1,2}[/-]\d{1,2}$/.test(rawDate)) {
+      const nowYear = baseDate.getFullYear();
+      rawDate = rawDate + '/' + nowYear;
+    }
+    const parts = rocket.parseDateParts(rawDate);
+    if (!parts) {
+      throw new Error('รูปแบบวันที่ไม่ถูกต้อง: ' + overrideDate + ' (รองรับ DD/MM/YYYY, YYYY-MM-DD, D/M)');
+    }
+    const fmtStr = String(parts.day).padStart(2, '0') + '/' + String(parts.month).padStart(2, '0') + '/' + parts.year;
+    return { start: fmtStr, end: fmtStr, dateParts: parts, isOverride: true };
+  }
+  const yesterday = rocket.computeYesterdayRangeBangkok(baseDate);
+  return { ...yesterday, isOverride: false };
+}
+
+
+
+
 async function main() {
 
   console.log('========== YESTERDAY COMPLETED JOBS SYNC (Node.js / GitHub Actions) ==========');
@@ -98,23 +121,18 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  let range;
-  if (process.env.TARGET_DATE_OVERRIDE) {
-    let rawDate = String(process.env.TARGET_DATE_OVERRIDE).trim();
-    // ถ้าใส่มาแค่ D/M หรือ DD/MM เช่น 3/9 ให้เติมปีปัจจุบันอัตโนมัติ
-    if (/^\d{1,2}[/-]\d{1,2}$/.test(rawDate)) {
-      const nowYear = new Date().getFullYear();
-      rawDate = rawDate + '/' + nowYear;
-    }
-    const parts = rocket.parseDateParts(rawDate);
-    if (!parts) {
-      throw new Error('TARGET_DATE_OVERRIDE format ไม่ถูกต้อง: ' + process.env.TARGET_DATE_OVERRIDE);
-    }
-    const fmtStr = String(parts.day).padStart(2, '0') + '/' + String(parts.month).padStart(2, '0') + '/' + parts.year;
-    range = { start: fmtStr, end: fmtStr, dateParts: parts };
-    console.log('วันที่นัดหมาย (override): ' + range.start);
+  const overrideInput = (
+    process.env.TARGET_DATE_OVERRIDE ||
+    process.env.TARGET_DATE ||
+    process.env.target_date ||
+    (process.argv && process.argv[2]) ||
+    ''
+  ).trim();
+
+  const range = computeTargetDateRange(overrideInput);
+  if (range.isOverride) {
+    console.log('วันที่นัดหมาย (Manual Override): ' + range.start);
   } else {
-    range = rocket.computeYesterdayRangeBangkok();
     console.log('วันที่นัดหมาย (เมื่อวาน): ' + range.start);
   }
 
@@ -188,13 +206,13 @@ async function main() {
         if (rocket.isMatchingDateParts(r.appointment, range.dateParts)) {
           yesterdayTickets.push(r);
         } else {
-          console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (นัดหมาย: "' + (r.appointment || 'ไม่มี') + '" ไม่ใช่วันเมื่อวาน)');
+          console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (นัดหมาย: "' + (r.appointment || 'ไม่มี') + '" ไม่ใช่วันที่ ' + range.start + ')');
         }
       }
     });
   }
 
-  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันเมื่อวานจริง: ' + yesterdayTickets.length);
+  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันที่ ' + range.start + ' จริง: ' + yesterdayTickets.length);
 
   if (parentIds.length > 0 && candidateSubIds.length > 0 && yesterdayTickets.length === 0) {
     throw new Error('พบ parent/sub tickets แต่ไม่พบ appointment ที่ตรงกับวันที่ ' + range.start +

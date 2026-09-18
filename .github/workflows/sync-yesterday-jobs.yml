@@ -2,6 +2,15 @@ name: Sync Yesterday Completed Jobs
 
 on:
   workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'วันที่นัดหมาย (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันเมื่อวานตามปกติ'
+        required: false
+        default: ''
+  push:
+    paths:
+      - 'github_action/sync-yesterday-jobs.js'
+      - '.github/workflows/sync-yesterday-jobs.yml'
   # schedule:
   #   # 05:05 เวลาไทย (UTC+7) = 22:05 UTC — ย้ายไปใช้ cron-job.org แล้ว
   #   - cron: '5 22 * * *'
@@ -32,4 +41,5 @@ jobs:
           ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          TARGET_DATE_OVERRIDE: ${{ inputs.target_date }}
         run: node sync-yesterday-jobs.js

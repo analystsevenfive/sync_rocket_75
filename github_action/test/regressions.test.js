@@ -138,6 +138,38 @@ test('gasoline computeDateRange defaults to the 1st of last month and supports r
   assert.equal(overrideRange.end, '31/05/2026');
 });
 
+test('yesterday computeTargetDateRange defaults to yesterday and supports manual date overrides', () => {
+  const script = loadScript('sync-yesterday-jobs.js');
+  const baseDate = new Date('2026-09-18T10:00:00+07:00');
+
+  // Default: yesterday (17/09/2026)
+  const defaultRange = script.computeTargetDateRange('', baseDate);
+  assert.equal(defaultRange.start, '17/09/2026');
+  assert.equal(defaultRange.end, '17/09/2026');
+  assert.equal(defaultRange.isOverride, false);
+
+  // Override with full DD/MM/YYYY
+  const manualRange = script.computeTargetDateRange('15/09/2026', baseDate);
+  assert.equal(manualRange.start, '15/09/2026');
+  assert.equal(manualRange.end, '15/09/2026');
+  assert.equal(manualRange.isOverride, true);
+
+  // Override with short D/M (e.g. 5/8 -> 05/08/2026)
+  const shortRange = script.computeTargetDateRange('5/8', baseDate);
+  assert.equal(shortRange.start, '05/08/2026');
+  assert.equal(shortRange.end, '05/08/2026');
+  assert.equal(shortRange.isOverride, true);
+
+  // Override with ISO format YYYY-MM-DD
+  const isoRange = script.computeTargetDateRange('2026-09-10', baseDate);
+  assert.equal(isoRange.start, '10/09/2026');
+  assert.equal(isoRange.end, '10/09/2026');
+  assert.equal(isoRange.isOverride, true);
+
+  // Invalid date format throws
+  assert.throws(() => script.computeTargetDateRange('invalid-date', baseDate), /รูปแบบวันที่ไม่ถูกต้อง/);
+});
+
 test('backfill locates current and legacy headers and updates only missing Ticket No cells', async () => {
   for (const values of [
     [['summary'], ['Inspection Status', 'Sales Invoice No.', 'Ticket ID', 'Parent Ticket ID', 'Parent Ticket No', 'Ticket No'], ['OK', 'INV', '42', '9', 'BK1', '']],
