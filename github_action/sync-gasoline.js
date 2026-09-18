@@ -31,8 +31,8 @@ const TICKETS_SHEET_NAME = 'Tickets';
 const GASOLINE_SHEET_NAME = 'Gasoline Detail';
 const RATE_PER_JOB = 80;
 
-// ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 1 ของ 2 เดือนที่แล้วเสมอ (01/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
-// เพื่อให้ข้อมูลย้อนหลัง 2 เดือนและเดือนปัจจุบันถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ (Sync Gasoline Detail)
+// ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 1 ของเดือนที่แล้วเสมอ (01/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
+// เพื่อให้ข้อมูล 1 เดือนล่าสุดและเดือนปัจจุบันถูกดึงมาอัปเดตสถานะและ Timestamp ในชีททุกรอบ (Sync Gasoline Detail)
 // รองรับ override ผ่าน environment variables (GASOLINE_START_DATE, GASOLINE_END_DATE) สำหรับยิงย้อนหลัง
 function computeDateRange(startOverride, endOverride, baseDate = new Date()) {
 
@@ -56,10 +56,10 @@ function computeDateRange(startOverride, endOverride, baseDate = new Date()) {
   let start = (startOverride || '').trim();
   let end = (endOverride || '').trim();
 
-  // ถ้าไม่ระบุ start_date -> ใช้วันที่ 1 ของ 2 เดือนที่แล้วเสมอ (ตามเวลากรุงเทพ)
+  // ถ้าไม่ระบุ start_date -> ใช้วันที่ 1 ของเดือนที่แล้วเสมอ (1 เดือนล่าสุด: ตามเวลากรุงเทพ)
   if (!start) {
     let startYear = now.year;
-    let startMonth = now.month - 2;
+    let startMonth = now.month - 1;
     while (startMonth < 1) {
       startMonth += 12;
       startYear -= 1;
@@ -521,20 +521,13 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
     }
   }
 
-  // อ่านข้อมูลเริ่มจากแถว 3 (ข้อมูลจริง)
+  // อ่านข้อมูลเริ่มจากแถว 3 (ข้อมูลจริง) เพื่อเก็บ Review, Note, All Technicians, URL เดิม
   const valuesRes = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!A3:K"
-  });
-
-  const formulaRes = await sheets.spreadsheets.values.get({
-    spreadsheetId: spreadsheetId,
-    range: "'" + sheetName + "'!N3:N",
-    valueRenderOption: 'FORMULA'
+    range: "'" + sheetName + "'!A3:M"
   });
 
   const ticketRows = valuesRes.data.values || [];
-  const formulaRows = formulaRes.data.values || [];
 
   // ตรวจจับ URL ที่ซ้ำข้าม Parent Ticket คนละเลข (เกิดจากบั๊กที่เคย fallback ด้วย "ใบงานเปล่า")
   // ซับทิกเก็ตใน Rocket จะมี ID เฉพาะตัว และต้องอยู่ใต้ Parent Ticket เดียวกันเสมอ
@@ -559,15 +552,18 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
   }
 
   const index = {};
+  const existingReviews = {};
+  const existingNotes = {};
   const existingAllTechs = {};
   const existingUrls = {};
-  const hasFormula = {};
 
   ticketRows.forEach(function(row, i) {
     const ticketNo = String(row[2] || '').trim();
     const techName = String(row[4] || '').trim(); // Col E: Technician Name
     const allTechs = String(row[5] || '').trim();
     const existingUrl = String(row[10] || '').trim();
+    const review = String(row[11] || '').trim();
+    const note = String(row[12] || '').trim();
     const rowNum = i + 3;
 
     if (ticketNo) {
@@ -576,6 +572,16 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
       index[compositeKey] = rowNum;
       if (!index[ticketNo]) {
         index[ticketNo] = rowNum;
+      }
+
+      if (review) {
+        existingReviews[compositeKey] = review;
+        if (!existingReviews[ticketNo]) existingReviews[ticketNo] = review;
+      }
+
+      if (note) {
+        existingNotes[compositeKey] = note;
+        if (!existingNotes[ticketNo]) existingNotes[ticketNo] = note;
       }
 
       if (allTechs) {
@@ -592,14 +598,14 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
         }
       }
     }
-    hasFormula[rowNum] = Boolean(formulaRows[i] && formulaRows[i][0]);
   });
 
   return {
     index: index,
+    existingReviews: existingReviews,
+    existingNotes: existingNotes,
     existingAllTechs: existingAllTechs,
     existingUrls: existingUrls,
-    hasFormula: hasFormula,
     lastRow: ticketRows.length + 2
   };
 
@@ -661,31 +667,50 @@ async function ensureGridSize(sheets, spreadsheetId, sheetId, requiredRows) {
 
 
 
-// แทนที่ batchUpsertGasolineDetail_ ใน gasoline.js —
-// logic เดียวกันเป๊ะ (upsert คีย์ Ticket No, เขียนทับ
-// A:K แถวเดิม, backfill สูตร N:O ถ้าขาด, แถวใหม่
-// เขียนเต็ม A:O)
-async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, urlMap, techMap, lastSync) {
+// ล้างข้อมูลเดิมในชีทตั้งแต่แถว 3 ลงไป (A3:Z) และเขียนข้อมูลชุดใหม่อย่างเป็นระเบียบ (Clean Refresh)
+// โดยคงค่า Review (Col L) และ Note (Col M) เดิมที่มีในตั๋วและช่างช่วงนี้ไว้
+async function clearAndWriteGasolineRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, urlMap, techMap, lastSync) {
 
-  if (rows.length === 0) {
-    return;
+  // 1. ล้างข้อมูลเก่าตั้งแต่แถว 3 ลงไปทั้งหมด (A3:Z) ก่อนเขียนใหม่ทุกครั้ง
+  try {
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: spreadsheetId,
+      range: "'" + sheetName + "'!A3:Z"
+    });
+    console.log('ล้างข้อมูลเก่าในชีท "' + sheetName + '" (A3:Z) เรียบร้อยแล้ว');
+  } catch (err) {
+    console.log('เตือน: ล้างข้อมูลชีทไม่สำเร็จ: ' + err.message);
   }
 
-  const data = [];
-  const newRows = [];
+  if (rows.length === 0) {
+    ctx.lastRow = 2;
+    return 2;
+  }
+
+  // 2. Deduplicate rows โดย composite key: Ticket No + Technician Name
   const uniqueRows = new Map();
-  rows.forEach(r => uniqueRows.set(
-    String(r.ticketNo).trim() + '__' + String(r.technician || '').trim(), r));
+  rows.forEach(function(r) {
+    const ticketKey = String(r.ticketNo || '').trim();
+    const techKey = String(r.technician || '').trim();
+    if (ticketKey) {
+      uniqueRows.set(ticketKey + '__' + techKey, r);
+    }
+  });
+
+  const targetRowCount = uniqueRows.size + 2;
+  await ensureGridSize(sheets, spreadsheetId, sheetId, targetRowCount);
+
+  // 3. ประกอบ Data Rows ทั้งหมดตั้งแต่แถว 3 เป็นต้นไป
+  const fullRows = [];
+  let rowNum = 3;
 
   uniqueRows.forEach(function(r) {
-
-    const ticketKey = String(r.ticketNo).trim();
+    const ticketKey = String(r.ticketNo || '').trim();
     const techKey = String(r.technician || '').trim();
     const parentKey = ticketKey.replace(/\.[A-Z0-9]+$/i, '').trim();
 
-    // 1. All Technicians:
+    // All Technicians (Col F):
     // ลำดับ: จาก techMap (Trick2) -> จาก Gasoline Detail เดิม -> fallback: r.technician
-    // ใช้เฉพาะ Ticket No หรือ Parent Ticket No เท่านั้น — ห้ามใช้ Job No (เช่น "ใบงานเปล่า")
     const allTechs = techMap[ticketKey] ||
       (parentKey && techMap[parentKey]) ||
       (ctx.existingAllTechs && ctx.existingAllTechs[ticketKey]) ||
@@ -693,81 +718,60 @@ async function upsertRows(sheets, spreadsheetId, sheetId, sheetName, rows, ctx, 
       r.technician ||
       '';
 
-    // 2. URL:
-    // ใช้เฉพาะ Ticket No หรือ Parent Ticket No เท่านั้น — ห้ามใช้ Job No เพราะ "ใบงานเปล่า" จะทำให้ URL เพี้ยน
+    // URL (Col K):
     const url = urlMap[ticketKey] ||
       (parentKey && urlMap[parentKey]) ||
       (ctx.existingUrls && ctx.existingUrls[ticketKey]) ||
       (parentKey && ctx.existingUrls && ctx.existingUrls[parentKey]) ||
       '';
 
-    const dataRow = [
-      r.arrivedDate, r.jobNo, r.ticketNo, r.customer,
-      r.technician, allTechs, r.team, r.counted, r.remarks,
-      lastSync, url
-    ];
+    // Review (Col L) และ Note (Col M):
+    const compKey = ticketKey + '__' + techKey;
+    const review = (ctx.existingReviews && (ctx.existingReviews[compKey] || ctx.existingReviews[ticketKey])) || '';
+    const note = (ctx.existingNotes && (ctx.existingNotes[compKey] || ctx.existingNotes[ticketKey])) || '';
 
-    const existingRow = ctx.index[ticketKey + '__' + techKey];
-
-    if (existingRow) {
-
-      data.push({
-        range: "'" + sheetName + "'!A" + existingRow + ':K' + existingRow,
-        values: [dataRow]
-      });
-
-      if (!ctx.hasFormula[existingRow]) {
-        data.push({
-          range: "'" + sheetName + "'!N" + existingRow + ':O' + existingRow,
-          values: [[countStackFormula(existingRow), amountFormula(existingRow)]]
-        });
-        ctx.hasFormula[existingRow] = true;
-      }
-
-    } else {
-
-      newRows.push({ ticketNo: ticketKey, technician: techKey, dataRow: dataRow });
-
-    }
-
+    fullRows.push([
+      r.arrivedDate,
+      r.jobNo,
+      ticketKey,
+      r.customer,
+      techKey,
+      allTechs,
+      r.team,
+      r.counted,
+      r.remarks,
+      lastSync,
+      url,
+      review,
+      note,
+      countStackFormula(rowNum),
+      amountFormula(rowNum)
+    ]);
+    rowNum++;
   });
 
-  if (newRows.length > 0) {
-
-    const startRow = ctx.lastRow + 1;
-
-    const fullRows = newRows.map(function(nr, i) {
-      const rowNum = startRow + i;
-      return nr.dataRow.concat([
-        '', '', countStackFormula(rowNum), amountFormula(rowNum)
-      ]);
-    });
-
-    data.push({
-      range: "'" + sheetName + "'!A" + startRow + ':O' + (startRow + newRows.length - 1),
-      values: fullRows
-    });
-
-    newRows.forEach(function(nr, i) {
-      const rowNum = startRow + i;
-      ctx.index[nr.ticketNo + '__' + nr.technician] = rowNum;
-      if (!ctx.index[nr.ticketNo]) {
-        ctx.index[nr.ticketNo] = rowNum;
+  // 4. เขียนชุดข้อมูลใหม่ทั้งหมดลงชีทในคำขอเดียว
+  if (fullRows.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: spreadsheetId,
+      requestBody: {
+        valueInputOption: 'USER_ENTERED',
+        data: [{
+          range: "'" + sheetName + "'!A3:O" + (2 + fullRows.length),
+          values: fullRows
+        }]
       }
     });
-
-    ctx.lastRow += newRows.length;
-
-    await ensureGridSize(sheets, spreadsheetId, sheetId, ctx.lastRow);
-
   }
 
-  await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: spreadsheetId,
-    requestBody: { valueInputOption: 'USER_ENTERED', data: data }
-  });
+  // อัปเดต ctx.lastRow เพื่อให้ขั้นตอนถัดไปใช้งาน
+  ctx.lastRow = 2 + fullRows.length;
+  return ctx.lastRow;
 
 }
+
+// Alias สำหรับ backward compatibility
+const upsertRows = clearAndWriteGasolineRows;
 
 
 
@@ -1216,11 +1220,11 @@ async function main() {
   const ctx = await buildRowIndex(sheets, spreadsheetId, GASOLINE_SHEET_NAME, sheetId, range, rows.length);
   const lastSync = formatLastSync(new Date());
 
-  await upsertRows(sheets, spreadsheetId, sheetId, GASOLINE_SHEET_NAME, rows, ctx, urlMap, techMap, lastSync);
+  const lastRow = await clearAndWriteGasolineRows(sheets, spreadsheetId, sheetId, GASOLINE_SHEET_NAME, rows, ctx, urlMap, techMap, lastSync);
 
-  await applyReviewValidation(sheets, spreadsheetId, sheetId, ctx.lastRow);
+  await applyReviewValidation(sheets, spreadsheetId, sheetId, lastRow);
 
-  console.log('DONE — เขียนลงชีท "' + GASOLINE_SHEET_NAME + '" แล้ว (upsert)');
+  console.log('DONE — เขียนลงชีท "' + GASOLINE_SHEET_NAME + '" แล้ว (clear & rewrite ' + (lastRow - 2) + ' แถว)');
 
   // หลัง sync เสร็จ ให้ตรวจสอบคอลัมน์ All Technicians (Column F) และ URL (Column K) ถ้าช่องไหนว่างให้ดึงมาเติม
   await backfillMissingDataFromRocket(sheets, spreadsheetId, GASOLINE_SHEET_NAME, auth, urlMap, techMap);

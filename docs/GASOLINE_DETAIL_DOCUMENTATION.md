@@ -49,7 +49,7 @@ flowchart TD
     subgraph Engine [Node.js Sync Engine]
         AUTH_STEP["rocketLogin()"]
         FETCH_STEP["fetchGasolineTeamXlsx()"]
-        UPSERT_STEP["upsertRows()"]
+        CLEAR_WRITE_STEP["clearAndWriteGasolineRows()<br>(ล้างชีทก่อนเขียน + คงค่า Review/Note)"]
         BACKFILL_STEP["backfillMissingDataFromRocket()"]
     end
 
@@ -62,10 +62,10 @@ flowchart TD
     R_AUTH --> AUTH_STEP
     AUTH_STEP --> FETCH_STEP
     FETCH_STEP -->|Download .xlsx 4 ทีม| R_EXP
-    SHEET_TICKETS -->|อ่าน URL Map| UPSERT_STEP
-    SHEET_TRICK2 -->|อ่าน Tech Map| UPSERT_STEP
-    FETCH_STEP --> UPSERT_STEP
-    UPSERT_STEP -->|Upsert A:K & สูตร N:O| SHEET_GASOLINE
+    SHEET_TICKETS -->|อ่าน URL Map| CLEAR_WRITE_STEP
+    SHEET_TRICK2 -->|อ่าน Tech Map| CLEAR_WRITE_STEP
+    FETCH_STEP --> CLEAR_WRITE_STEP
+    CLEAR_WRITE_STEP -->|ล้างชีท & เขียน A:O ครบชุด| SHEET_GASOLINE
     BACKFILL_STEP -->|ตรวจช่องว่าง Col F, K| SHEET_GASOLINE
     BACKFILL_STEP -.->|Fallback ยิงค้นหา| R_SEARCH
     BACKFILL_STEP -.->|ดึง Sub ID & Techs| R_CHECK
@@ -103,12 +103,12 @@ flowchart TD
 
 ## ⚙️ 4. สถาปัตยกรรมและ Logic การ Sync (`sync-gasoline.js`)
 
-การอัปเดตชีท **ไม่ได้เป็นการสแกนทุกแถวในชีทแล้วไล่ Refresh** แต่ทำงานด้วยสถาปัตยกรรม **Source-Driven Upsert**:
+การอัปเดตชีททำงานด้วยสถาปัตยกรรม **Clean Refresh with State Preservation** (ล้างชีทก่อนเขียนใหม่ทุกรอบ พร้อมคงค่า Review/Note):
 
 ### ขั้นตอนการทำงาน (Step-by-Step Execution):
 
 1. **คำนวณช่วงวันที่ (`computeDateRange`):**
-   - วันที่เริ่มต้น: **วันที่ 1 ของ 2 เดือนที่แล้วเสมอ** (เช่น ปัจจุบันเดือน 09/2026 จะเริ่มดึงตั้งแต่ `01/07/2026`)
+   - วันที่เริ่มต้น: **วันที่ 1 ของเดือนที่แล้วเสมอ** (1 เดือนล่าสุด + เดือนปัจจุบัน เช่น ปัจจุบันเดือน 09/2026 จะเริ่มดึงตั้งแต่ `01/08/2026`)
    - วันที่สิ้นสุด: **วันปัจจุบัน**
    - *หมายเหตุ:* รองรับการ Override ผ่าน ENV `GASOLINE_START_DATE` และ `GASOLINE_END_DATE`
 
@@ -116,17 +116,15 @@ flowchart TD
    - วนลูปยิง `export_cost_team.php` ครบทั้ง 4 ทีม แล้วใช้ `SheetJS` แปลง Excel เป็น Data Array
    - นำข้อมูลทั้ง 4 ทีมมารวมกันเป็น Array `rows`
 
-3. **สร้าง Index จากชีทเดิม (`buildRowIndex`):**
+3. **อ่านข้อมูลเดิมและเก็บค่า Review / Note (`buildRowIndex`):**
    - อ่านข้อมูลเดิมจากชีท `Gasoline Detail` เริ่มจากแถว 3 ลงไป
-   - สร้าง Index ด้วย **Composite Key**:
-     $$\text{Composite Key} = \text{Ticket No.} + \text{"\_\_"} + \text{Technician Name}$$
-     *(เช่น `BKIN0826-000040.R01__สมชาย ใจดี`)*
-   - แมป `ctx.index[compositeKey] = rowNumber` เพื่อรู้ว่ารายการนี้อยู่ที่แถวไหนในชีท
+   - เก็บค่าคอลัมน์ `Review` (Approved / Not Approved) และ `Note` รวมถึง URL และ All Technicians เดิมที่มีอยู่ในชีทไว้ในหน่วยความจำ
 
-4. **การ Upsert ข้อมูล (`upsertRows`):**
-   - **วนลูปเฉพาะข้อมูลที่ได้จาก Rocket ในรอบนี้ (`rows`) เท่านั้น:**
-     - **กรณีตรงกับแถวเดิมในชีท (`existingRow`):** ทำการ Update ทับคอลัมน์ A ถึง K และเซ็ต `Last Sync` เป็นเวลาปัจจุบัน
-     - **กรณีไม่พบในชีท:** ทำการ Append ต่อท้ายเป็นแถวใหม่ พร้อมสร้างสูตรคอลัมน์ N และ O
+4. **ล้างชีทและเขียนข้อมูลชุดใหม่ (`clearAndWriteGasolineRows`):**
+   - **ล้างข้อมูลเก่า:** รันคำสั่ง `values.clear` ล้างข้อมูลตั้งแต่แถว 3 ลงไปทั้งหมด (`A3:Z`) เพื่อตัดปัญหาแถวเก่าตกค้างหรือแถวซ้ำ
+   - **Deduplicate:** คัดกรองแถวซ้ำด้วย Composite Key (`Ticket No + Technician Name`)
+   - **ประกอบ Data Rows:** เขียนทับลงแถว 3 เป็นต้นไปในคำขอเดียว พร้อมคืนค่า `Review` และ `Note` เดิมของแต่ละรายการ และผูกสูตร `Count Stack` (Col N) กับ `Amount Received` (Col O) ครบถ้วน
+   - **ตั้งค่า Validation:** กำหนด Data Validation Dropdown สำหรับคอลัมน์ `Review` (Approved / Not Approved)
 
 5. **Auto-Backfill ข้อมูลที่ขาด (`backfillMissingDataFromRocket`):**
    - ตรวจหาแถวในชีทที่คอลัมน์ `All Technicians` (F) หรือ `URL` (K) ยังว่างอยู่

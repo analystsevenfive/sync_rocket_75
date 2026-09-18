@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       start_date:
-        description: 'Start date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันที่ 1 ของ 2 เดือนที่แล้ว'
+        description: 'Start date (DD/MM/YYYY) — ปล่อยว่างเพื่อใช้วันที่ 1 ของเดือนที่แล้ว'
         required: false
         default: ''
       end_date:

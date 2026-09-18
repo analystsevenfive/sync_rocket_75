@@ -79,36 +79,57 @@ test('partial fetch failure aborts a full snapshot after retry', async () => {
   assert.deepEqual(await rocket.mapConcurrentStrict([2, 1], 2, async id => id), [2, 1]);
 });
 
-test('gasoline keeps different technicians on separate rows and deduplicates repeated input', async () => {
+test('gasoline clears sheet before writing, keeps different technicians on separate rows, and deduplicates repeated input', async () => {
   const script = loadScript('sync-gasoline.js');
   const { sheets, state } = fakeSheets();
-  const ctx = { index: { 'BK1__Alice': 3, BK1: 3 }, hasFormula: { 3: true }, lastRow: 3 };
-  const row = { ticketNo: 'BK1', technician: 'Bob', counted: 1 };
-  await script.upsertRows(sheets, 'test', 0, 'Gasoline', [row, row], ctx, {}, {}, 'now');
+  let clearedRange = null;
+  sheets.spreadsheets.values.clear = async req => {
+    clearedRange = req.range;
+    state.values = [];
+  };
+  const ctx = {
+    existingReviews: { 'BK1__Alice': 'Approved' },
+    existingNotes: { 'BK1__Alice': 'note1' },
+    existingAllTechs: { 'BK1': 'Alice, Bob' },
+    existingUrls: { 'BK1': 'https://rocket75.com/ticket/1' },
+    lastRow: 3
+  };
+  const rowAlice = { ticketNo: 'BK1', technician: 'Alice', counted: 1, arrivedDate: '01/08/2026', jobNo: 'J1', customer: 'Cust', team: 'A', remarks: '' };
+  const rowBob = { ticketNo: 'BK1', technician: 'Bob', counted: 1, arrivedDate: '01/08/2026', jobNo: 'J1', customer: 'Cust', team: 'A', remarks: '' };
+
+  await script.clearAndWriteGasolineRows(sheets, 'test', 0, 'Gasoline Detail', [rowAlice, rowBob, rowBob], ctx, {}, {}, 'now');
+
+  assert.ok(clearedRange && clearedRange.includes('A3:Z'));
+  assert.equal(state.writes.length, 1);
+  const write = state.writes[0];
+  assert.equal(write.range, "'Gasoline Detail'!A3:O4");
+  assert.equal(write.values.length, 2); // Alice and Bob (Bob deduplicated)
+  assert.equal(write.values[0][2], 'BK1'); // Ticket No
+  assert.equal(write.values[0][4], 'Alice'); // Technician
+  assert.equal(write.values[0][11], 'Approved'); // Preserved Review
+  assert.equal(write.values[0][12], 'note1'); // Preserved Note
+  assert.equal(write.values[1][4], 'Bob'); // Technician
   assert.equal(ctx.lastRow, 4);
-  assert.equal(ctx.index['BK1__Alice'], 3);
-  assert.equal(ctx.index['BK1__Bob'], 4);
-  assert.ok(state.writes.every(write => !write.range.includes('A3:')));
 });
 
-test('gasoline computeDateRange defaults to the 1st of 2 months ago and supports rollover across years', () => {
+test('gasoline computeDateRange defaults to the 1st of last month and supports rollover across years', () => {
   const script = loadScript('sync-gasoline.js');
-  // 11 September 2026 -> 01/07/2026 to 11/09/2026 (ย้อนหลัง 2 เดือน: ก.ค. - ก.ย.)
+  // 11 September 2026 -> 01/08/2026 to 11/09/2026 (1 เดือนล่าสุด + เดือนปัจจุบัน: ส.ค. - ก.ย.)
   const sepDate = new Date('2026-09-11T08:00:00+07:00');
   const sepRange = script.computeDateRange('', '', sepDate);
-  assert.equal(sepRange.start, '01/07/2026');
+  assert.equal(sepRange.start, '01/08/2026');
   assert.equal(sepRange.end, '11/09/2026');
 
-  // Year rollover (Feb): 15 February 2027 -> 01/12/2026 to 15/02/2027
+  // Year rollover (Feb): 15 February 2027 -> 01/01/2027 to 15/02/2027
   const febDate = new Date('2027-02-15T10:00:00+07:00');
   const febRange = script.computeDateRange('', '', febDate);
-  assert.equal(febRange.start, '01/12/2026');
+  assert.equal(febRange.start, '01/01/2027');
   assert.equal(febRange.end, '15/02/2027');
 
-  // Year rollover (Jan): 15 January 2027 -> 01/11/2026 to 15/01/2027
+  // Year rollover (Jan): 15 January 2027 -> 01/12/2026 to 15/01/2027
   const janDate = new Date('2027-01-15T10:00:00+07:00');
   const janRange = script.computeDateRange('', '', janDate);
-  assert.equal(janRange.start, '01/11/2026');
+  assert.equal(janRange.start, '01/12/2026');
   assert.equal(janRange.end, '15/01/2027');
 
   // Override support
