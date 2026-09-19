@@ -112,24 +112,24 @@ test('gasoline clears sheet before writing, keeps different technicians on separ
   assert.equal(ctx.lastRow, 4);
 });
 
-test('gasoline computeDateRange defaults to the 1st of last month and supports rollover across years', () => {
+test('gasoline computeDateRange defaults to the 16th of 2 months ago and supports rollover across years', () => {
   const script = loadScript('sync-gasoline.js');
-  // 11 September 2026 -> 01/08/2026 to 11/09/2026 (1 เดือนล่าสุด + เดือนปัจจุบัน: ส.ค. - ก.ย.)
+  // 11 September 2026 -> 16/07/2026 to 11/09/2026 (ย้อนหลัง 2 เดือน เริ่มวันที่ 16: ก.ค. - ก.ย.)
   const sepDate = new Date('2026-09-11T08:00:00+07:00');
   const sepRange = script.computeDateRange('', '', sepDate);
-  assert.equal(sepRange.start, '01/08/2026');
+  assert.equal(sepRange.start, '16/07/2026');
   assert.equal(sepRange.end, '11/09/2026');
 
-  // Year rollover (Feb): 15 February 2027 -> 01/01/2027 to 15/02/2027
+  // Year rollover (Feb): 15 February 2027 -> 16/12/2026 to 15/02/2027
   const febDate = new Date('2027-02-15T10:00:00+07:00');
   const febRange = script.computeDateRange('', '', febDate);
-  assert.equal(febRange.start, '01/01/2027');
+  assert.equal(febRange.start, '16/12/2026');
   assert.equal(febRange.end, '15/02/2027');
 
-  // Year rollover (Jan): 15 January 2027 -> 01/12/2026 to 15/01/2027
+  // Year rollover (Jan): 15 January 2027 -> 16/11/2026 to 15/01/2027
   const janDate = new Date('2027-01-15T10:00:00+07:00');
   const janRange = script.computeDateRange('', '', janDate);
-  assert.equal(janRange.start, '01/12/2026');
+  assert.equal(janRange.start, '16/11/2026');
   assert.equal(janRange.end, '15/01/2027');
 
   // Override support
@@ -202,9 +202,9 @@ test('HTTP timeout covers a stalled body after response headers arrive', async (
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   // Stop the baseline test from hanging if the body timeout is broken.
-  const watchdog = setTimeout(() => server.closeAllConnections(), 500);
+  const watchdog = setTimeout(() => server.closeAllConnections(), 1000);
   try {
-    const res = await rocket.fetchWithTimeout(`http://127.0.0.1:${server.address().port}`, {}, 80);
+    const res = await rocket.fetchWithTimeout(`http://127.0.0.1:${server.address().port}`, {}, 150);
     await assert.rejects(res.text(), err => /abort|timeout/i.test(err.name));
   } finally {
     clearTimeout(watchdog);
