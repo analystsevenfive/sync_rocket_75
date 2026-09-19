@@ -75,7 +75,7 @@ test('partial fetch failure aborts a full snapshot after retry', async () => {
     if (id === 2) { failures++; throw new Error('offline'); }
     return id;
   }), /offline/);
-  assert.equal(failures, 2);
+  assert.equal(failures, 3);
   assert.deepEqual(await rocket.mapConcurrentStrict([2, 1], 2, async id => id), [2, 1]);
 });
 

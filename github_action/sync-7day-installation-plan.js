@@ -20,8 +20,8 @@ const SHEET_NAME = '7-Day Installation Plan';
 const DATE_TYPE_APPOINTMENT = '2';
 const SEARCH_TYPE_INSTALLATION = '3'; // IN = งานติดตั้ง
 
-const PARENT_CONCURRENCY = 30;
-const SUB_CONCURRENCY = 30;
+const PARENT_CONCURRENCY = 15;
+const SUB_CONCURRENCY = 15;
 
 const HEADERS = [
   'Ticket No',

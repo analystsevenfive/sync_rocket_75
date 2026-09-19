@@ -13,7 +13,7 @@
  *************************************************/
 
 const ROCKET_BASE = 'https://rocket75.com';
-const FETCH_TIMEOUT_MS = 30000;
+const FETCH_TIMEOUT_MS = 60000;
 
 
 
@@ -109,15 +109,13 @@ async function rocketLogin() {
 // จบในโปรเซสเดียว — จำกัด concurrency ไม่ให้ยิงแรงเกิน
 // ไปพร้อมกันทีเดียวหมด (เผื่อใจ rocket75.com เหมือนที่
 // เคยคุยกันไว้)
-// retries=1 (default) คือลองซ้ำ 1 ครั้งถ้าพลาด (รวม 2
-// attempt) หน่วง 500ms ก่อน retry กันซ้ำเซิร์ฟเวอร์ที่กำลัง
+// retries=2 (default) คือลองซ้ำ 2 ครั้งถ้าพลาด (รวม 3
+// attempt) หน่วง 1000ms * (attempt + 1) ก่อน retry กันซ้ำเซิร์ฟเวอร์ที่กำลัง
 // สะดุดอยู่ทันที — เทียบเท่า fetchAllWithRetry_ ฝั่ง Apps
-// Script เดิมที่หายไปตอนพอร์ตมา Node (mapConcurrent เดิม
-// ไม่มี retry เลย ทำให้ error ชั่วคราวกลายเป็น error ถาวร
-// ของรอบนั้นทันที)
+// Script เดิม
 async function mapConcurrent(items, concurrency, worker, retries) {
 
-  const maxRetries = retries === undefined ? 1 : retries;
+  const maxRetries = retries === undefined ? 2 : retries;
   const results = new Array(items.length);
   let index = 0;
 
@@ -129,7 +127,7 @@ async function mapConcurrent(items, concurrency, worker, retries) {
       } catch (e) {
         lastErr = e;
         if (attempt < maxRetries) {
-          await sleep(500 * (attempt + 1));
+          await sleep(1000 * (attempt + 1));
         }
       }
     }
