@@ -2057,6 +2057,18 @@ function batchUpsertGasolineDetail_(
 
 
   const uniqueRows = new Map();
+  const ticketDateMap = {};
+
+  rows.forEach(function(r) {
+    const ticketKey = String(r.ticketNo || '').trim();
+    const parentKey = ticketKey.replace(/\.[A-Z0-9]+$/i, '').trim();
+    const arrived = String(r.arrivedDate || '').trim();
+    if (arrived) {
+      if (ticketKey && !ticketDateMap[ticketKey]) ticketDateMap[ticketKey] = arrived;
+      if (parentKey && !ticketDateMap[parentKey]) ticketDateMap[parentKey] = arrived;
+    }
+  });
+
   rows.forEach(function(r) {
     uniqueRows.set(String(r.ticketNo).trim() + '__' + String(r.technician || '').trim(), r);
   });
@@ -2066,9 +2078,16 @@ function batchUpsertGasolineDetail_(
       urlMap[r.ticketNo] ||
       '';
 
+    const ticketKey = String(r.ticketNo || '').trim();
+    const parentKey = ticketKey.replace(/\.[A-Z0-9]+$/i, '').trim();
+    const arrivedDate = r.arrivedDate ||
+      ticketDateMap[ticketKey] ||
+      (parentKey && ticketDateMap[parentKey]) ||
+      '';
+
     const dataRow = [
 
-      r.arrivedDate,
+      arrivedDate,
       r.jobNo,
       r.ticketNo,
       r.customer,

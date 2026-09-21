@@ -556,8 +556,10 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
   const existingNotes = {};
   const existingAllTechs = {};
   const existingUrls = {};
+  const existingArrivedDates = {};
 
   ticketRows.forEach(function(row, i) {
+    const arrivedDate = String(row[0] || '').trim();
     const ticketNo = String(row[2] || '').trim();
     const techName = String(row[4] || '').trim(); // Col E: Technician Name
     const allTechs = String(row[5] || '').trim();
@@ -572,6 +574,10 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
       index[compositeKey] = rowNum;
       if (!index[ticketNo]) {
         index[ticketNo] = rowNum;
+      }
+
+      if (arrivedDate && !existingArrivedDates[ticketNo]) {
+        existingArrivedDates[ticketNo] = arrivedDate;
       }
 
       if (review) {
@@ -606,6 +612,7 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
     existingNotes: existingNotes,
     existingAllTechs: existingAllTechs,
     existingUrls: existingUrls,
+    existingArrivedDates: existingArrivedDates,
     lastRow: ticketRows.length + 2
   };
 
@@ -697,6 +704,33 @@ async function clearAndWriteGasolineRows(sheets, spreadsheetId, sheetId, sheetNa
     }
   });
 
+  // สร้าง map สำหรับ fallback ข้อมูลของตั๋วใบเดียวกัน (เช่น Date Arrived, Customer, Job No)
+  // โดยเฉพาะ Date Arrived ที่บางแถว/ช่างบางคนของตั๋วใบเดียวกันใน Rocket ส่งมาเป็นค่าว่าง
+  const ticketDateMap = {};
+  const ticketCustomerMap = {};
+  const ticketJobNoMap = {};
+
+  rows.forEach(function(r) {
+    const ticketKey = String(r.ticketNo || '').trim();
+    const parentKey = ticketKey.replace(/\.[A-Z0-9]+$/i, '').trim();
+    const arrived = String(r.arrivedDate || '').trim();
+    const cust = String(r.customer || '').trim();
+    const job = String(r.jobNo || '').trim();
+
+    if (arrived) {
+      if (ticketKey && !ticketDateMap[ticketKey]) ticketDateMap[ticketKey] = arrived;
+      if (parentKey && !ticketDateMap[parentKey]) ticketDateMap[parentKey] = arrived;
+    }
+    if (cust) {
+      if (ticketKey && !ticketCustomerMap[ticketKey]) ticketCustomerMap[ticketKey] = cust;
+      if (parentKey && !ticketCustomerMap[parentKey]) ticketCustomerMap[parentKey] = cust;
+    }
+    if (job && job !== 'ใบงานเปล่า') {
+      if (ticketKey && !ticketJobNoMap[ticketKey]) ticketJobNoMap[ticketKey] = job;
+      if (parentKey && !ticketJobNoMap[parentKey]) ticketJobNoMap[parentKey] = job;
+    }
+  });
+
   const targetRowCount = uniqueRows.size + 2;
   await ensureGridSize(sheets, spreadsheetId, sheetId, targetRowCount);
 
@@ -708,6 +742,26 @@ async function clearAndWriteGasolineRows(sheets, spreadsheetId, sheetId, sheetNa
     const ticketKey = String(r.ticketNo || '').trim();
     const techKey = String(r.technician || '').trim();
     const parentKey = ticketKey.replace(/\.[A-Z0-9]+$/i, '').trim();
+
+    // Date Arrived (Col A):
+    // ลำดับ: r.arrivedDate -> ticketDateMap (จากตั๋วใบเดียวกันในรอบนี้) -> จากชีทเดิม -> ว่าง
+    const arrivedDate = r.arrivedDate ||
+      ticketDateMap[ticketKey] ||
+      (parentKey && ticketDateMap[parentKey]) ||
+      (ctx.existingArrivedDates && ctx.existingArrivedDates[ticketKey]) ||
+      (parentKey && ctx.existingArrivedDates && ctx.existingArrivedDates[parentKey]) ||
+      '';
+
+    // Job No (Col B):
+    const jobNo = (r.jobNo && r.jobNo !== 'ใบงานเปล่า')
+      ? r.jobNo
+      : (ticketJobNoMap[ticketKey] || (parentKey && ticketJobNoMap[parentKey]) || r.jobNo || '');
+
+    // Customer Name (Col D):
+    const customer = r.customer ||
+      ticketCustomerMap[ticketKey] ||
+      (parentKey && ticketCustomerMap[parentKey]) ||
+      '';
 
     // All Technicians (Col F):
     // ลำดับ: จาก techMap (Trick2) -> จาก Gasoline Detail เดิม -> fallback: r.technician
@@ -731,10 +785,10 @@ async function clearAndWriteGasolineRows(sheets, spreadsheetId, sheetId, sheetNa
     const note = (ctx.existingNotes && (ctx.existingNotes[compKey] || ctx.existingNotes[ticketKey])) || '';
 
     fullRows.push([
-      r.arrivedDate,
-      r.jobNo,
+      arrivedDate,
+      jobNo,
       ticketKey,
-      r.customer,
+      customer,
       techKey,
       allTechs,
       r.team,

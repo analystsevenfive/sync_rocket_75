@@ -112,6 +112,58 @@ test('gasoline clears sheet before writing, keeps different technicians on separ
   assert.equal(ctx.lastRow, 4);
 });
 
+test('gasoline inherits Date Arrived, Customer, and Job No across duplicate/sibling technician rows for the same ticket', async () => {
+  const script = loadScript('sync-gasoline.js');
+  const { sheets, state } = fakeSheets();
+  sheets.spreadsheets.values.clear = async () => { state.values = []; };
+  const ctx = {
+    existingReviews: {},
+    existingNotes: {},
+    existingAllTechs: {},
+    existingUrls: {},
+    existingArrivedDates: {},
+    lastRow: 2
+  };
+  // Row 1 (e.g. from Team A) has empty arrivedDate and generic 'ใบงานเปล่า'
+  const rowTeamA = {
+    ticketNo: 'BKPM0326-000613.R12',
+    technician: 'ช่างเอ',
+    counted: 1,
+    arrivedDate: '',
+    jobNo: 'ใบงานเปล่า',
+    customer: 'บจก. กวง',
+    team: 'A (BK)',
+    remarks: ''
+  };
+  // Row 2 (e.g. from Team B / หัวหน้าช่าง) has arrivedDate '18/09/2026' and real jobNo '000613'
+  const rowTeamB = {
+    ticketNo: 'BKPM0326-000613.R12',
+    technician: 'ช่างบี',
+    counted: 1,
+    arrivedDate: '18/09/2026',
+    jobNo: '000613',
+    customer: 'บจก. กวง',
+    team: 'B (BK)',
+    remarks: ''
+  };
+
+  await script.clearAndWriteGasolineRows(sheets, 'test', 0, 'Gasoline Detail', [rowTeamA, rowTeamB], ctx, {}, {}, 'now');
+
+  assert.equal(state.writes.length, 1);
+  const write = state.writes[0];
+  assert.equal(write.values.length, 2);
+  // Row 1 must inherit 18/09/2026 and 000613
+  assert.equal(write.values[0][0], '18/09/2026');
+  assert.equal(write.values[0][1], '000613');
+  assert.equal(write.values[0][2], 'BKPM0326-000613.R12');
+  assert.equal(write.values[0][4], 'ช่างเอ');
+  // Row 2 retains 18/09/2026
+  assert.equal(write.values[1][0], '18/09/2026');
+  assert.equal(write.values[1][1], '000613');
+  assert.equal(write.values[1][2], 'BKPM0326-000613.R12');
+  assert.equal(write.values[1][4], 'ช่างบี');
+});
+
 test('gasoline computeDateRange defaults to the 16th of 2 months ago and supports rollover across years', () => {
   const script = loadScript('sync-gasoline.js');
   // 11 September 2026 -> 16/07/2026 to 11/09/2026 (ย้อนหลัง 2 เดือน เริ่มวันที่ 16: ก.ค. - ก.ย.)
