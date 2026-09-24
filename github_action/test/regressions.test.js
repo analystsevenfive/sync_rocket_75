@@ -647,4 +647,101 @@ test('parseTicketDetail extracts real status (e.g. รอเข้างาน) 
   assert.equal(rocket.extractTicketStatus(samplePageHtml), 'รอเข้างาน');
 });
 
+test('isBkTicket validates tickets starting with BK', () => {
+  assert.equal(rocket.isBkTicket('BKRM0926-000346.R01'), true);
+  assert.equal(rocket.isBkTicket('bkrm0926-000346.R01'), true);
+  assert.equal(rocket.isBkTicket('BK100'), true);
+  assert.equal(rocket.isBkTicket('  BK-999  '), true);
+  assert.equal(rocket.isBkTicket('SMRM0926-000342.R01'), false);
+  assert.equal(rocket.isBkTicket('PKRM0926-000123'), false);
+  assert.equal(rocket.isBkTicket('PTRM0926-000123'), false);
+  assert.equal(rocket.isBkTicket('CMRM0926-000123'), false);
+  assert.equal(rocket.isBkTicket(''), false);
+  assert.equal(rocket.isBkTicket('   '), false);
+  assert.equal(rocket.isBkTicket(null), false);
+  assert.equal(rocket.isBkTicket(undefined), false);
+  assert.equal(rocket.isBkTicket('-'), false);
+});
+
+test("hasValidTechnician validates assigned technicians and excludes '-', null, empty", () => {
+  assert.equal(rocket.hasValidTechnician('ชรรศ ก้อนทอง'), true);
+  assert.equal(rocket.hasValidTechnician('ชรรศ ก้อนทอง, ธนพล'), true);
+  assert.equal(rocket.hasValidTechnician('A (BK)'), true);
+  assert.equal(rocket.hasValidTechnician('-'), false);
+  assert.equal(rocket.hasValidTechnician(' - '), false);
+  assert.equal(rocket.hasValidTechnician('--'), false);
+  assert.equal(rocket.hasValidTechnician('- , -'), false);
+  assert.equal(rocket.hasValidTechnician('–'), false);
+  assert.equal(rocket.hasValidTechnician('—'), false);
+  assert.equal(rocket.hasValidTechnician('null'), false);
+  assert.equal(rocket.hasValidTechnician('NULL'), false);
+  assert.equal(rocket.hasValidTechnician('None'), false);
+  assert.equal(rocket.hasValidTechnician(''), false);
+  assert.equal(rocket.hasValidTechnician('   '), false);
+  assert.equal(rocket.hasValidTechnician(null), false);
+  assert.equal(rocket.hasValidTechnician(undefined), false);
+});
+
+for (const scriptName of ['sync-tomorrow-plan.js', 'sync-yesterday-jobs.js', 'sync-daily-repair.js']) {
+  test(`${scriptName} filters tickets where ticketNo starts with BK and technician is not '-' or null`, async () => {
+    let writtenRows = null;
+    const targetDate = scriptName.includes('tomorrow')
+      ? rocket.computeTomorrowRangeBangkok().start
+      : (scriptName.includes('yesterday')
+        ? rocket.computeYesterdayRangeBangkok().start
+        : rocket.computeTodayRangeBangkok().start);
+
+    const script = loadScript(scriptName, {
+      './lib/rocket-client': {
+        ...rocket,
+        rocketLogin: async () => ({ cookie: 'mock' }),
+        getParentTicketHtml: async () => '<tr><td><a href="ticket_view.php?id=10">BK1</a></td></tr>',
+        extractParentTicketIds: () => ['10'],
+        extractParentToCustomerCodeMap: () => ({ '10': 'CUST1' }),
+        extractParentToProductIdMap: () => ({ '10': 'PROD1' }),
+        getCheckRepairHtml: async () => '',
+        extractCheckRepairIds: () => ['101', '102', '103', '104', '105'],
+        extractCheckRepairInfo: () => ({
+          '101': { ticketNo: 'BKRM01.R01', technicians: 'ช่างหนึ่ง', team: 'A' },
+          '102': { ticketNo: 'BKRM02.R01', technicians: '-', team: 'A' },
+          '103': { ticketNo: 'BKRM03.R01', technicians: '', team: 'A' },
+          '104': { ticketNo: 'SMRM01.R01', technicians: 'ช่างสมุย', team: 'B' },
+          '105': { ticketNo: 'BKRM05.R01', technicians: 'null', team: 'A' }
+        }),
+        getTicketDetailHtml: async (subId) => `<div>ticket ${subId}</div>`,
+        parseTicketDetail: (html, subId) => {
+          const map = {
+            '101': { ticketId: '101', ticketNo: 'BKRM01.R01', appointment: `${targetDate} 09:00`, status: 'กำลังทำ', technician: 'ช่างหนึ่ง' },
+            '102': { ticketId: '102', ticketNo: 'BKRM02.R01', appointment: `${targetDate} 10:00`, status: 'กำลังทำ', technician: '-' },
+            '103': { ticketId: '103', ticketNo: 'BKRM03.R01', appointment: `${targetDate} 11:00`, status: 'กำลังทำ', technician: '' },
+            '104': { ticketId: '104', ticketNo: 'SMRM01.R01', appointment: `${targetDate} 12:00`, status: 'กำลังทำ', technician: 'ช่างสมุย' },
+            '105': { ticketId: '105', ticketNo: 'BKRM05.R01', appointment: `${targetDate} 13:00`, status: 'กำลังทำ', technician: 'null' }
+          };
+          return map[subId];
+        },
+        getInspectorModalHtml: async () => '',
+        parseInspectorModal: () => ({ status: 'ตรวจแล้ว', type: 'งานซ่อม' }),
+        getParentPageHtml: async () => '',
+        parseCurrentJobType: () => '',
+        extractTicketStatus: () => '',
+        getModalProductHtml: async () => '',
+        parseSalesInvoiceNo: () => ''
+      },
+      './lib/sheets-client': {
+        getSheetsClient: async () => ({}),
+        ensureSheetExists: async () => 1,
+        replaceSheetData: async (sheets, spreadsheetId, sheetId, sheetName, headers, rows) => {
+          writtenRows = rows;
+        }
+      }
+    });
+
+    await script.main();
+
+    assert.ok(writtenRows, 'replaceSheetData must be called');
+    assert.equal(writtenRows.length, 1, `Expected exactly 1 row after filtering, got ${writtenRows.length}`);
+    assert.equal(writtenRows[0][1], 'BKRM01.R01', 'Written row ticketNo must be BKRM01.R01');
+  });
+}
+
 

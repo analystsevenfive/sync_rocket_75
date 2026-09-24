@@ -185,6 +185,7 @@ async function main() {
   // ==========================================
 
   let yesterdayTickets = [];
+  let matchingAppointmentCount = 0;
 
   if (candidateSubIds.length > 0) {
     const detailResults = await rocket.mapConcurrentStrict(candidateSubIds, SUB_CONCURRENCY, async function(subId) {
@@ -193,7 +194,7 @@ async function main() {
       if (!ticket.ticketNo && !ticket.status) {
         throw new Error('หน้าที่ได้ไม่ใช่ ticket detail จริง (parse ไม่สำเร็จ)');
       }
-      const info = infoMap[String(subId)] || {};
+      const info = infoMap[String(subId)] || (ticket.ticketNo ? infoMap[ticket.ticketNo] : null) || {};
       ticket.technician = info.technicians || ticket.technician || '';
       ticket.team = info.team || '';
       return ticket;
@@ -204,7 +205,15 @@ async function main() {
         console.log('ERROR SubTicket ' + candidateSubIds[i] + ': ' + r.__error);
       } else if (r) {
         if (rocket.isMatchingDateParts(r.appointment, range.dateParts)) {
-          yesterdayTickets.push(r);
+          matchingAppointmentCount++;
+          const ticketNo = r.ticketNo || r.parentTicketNo || '';
+          if (!rocket.isBkTicket(ticketNo)) {
+            console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (Ticket No ไม่ได้ขึ้นต้นด้วย BK: "' + ticketNo + '")');
+          } else if (!rocket.hasValidTechnician(r.technician)) {
+            console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (Technician เป็นว่าง, "-" หรือ null: "' + (r.technician || '') + '")');
+          } else {
+            yesterdayTickets.push(r);
+          }
         } else {
           console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (นัดหมาย: "' + (r.appointment || 'ไม่มี') + '" ไม่ใช่วันที่ ' + range.start + ')');
         }
@@ -212,9 +221,9 @@ async function main() {
     });
   }
 
-  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันที่ ' + range.start + ' จริง: ' + yesterdayTickets.length);
+  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันที่ ' + range.start + ' จริง: ' + matchingAppointmentCount + ' (ผ่าน filter BK & มีช่าง: ' + yesterdayTickets.length + ')');
 
-  if (parentIds.length > 0 && candidateSubIds.length > 0 && yesterdayTickets.length === 0) {
+  if (parentIds.length > 0 && candidateSubIds.length > 0 && matchingAppointmentCount === 0) {
     throw new Error('พบ parent/sub tickets แต่ไม่พบ appointment ที่ตรงกับวันที่ ' + range.start +
       ' — หยุดก่อนล้างชีท; ตรวจสอบรูปแบบวันที่ใน ticket detail หรือ date filter ของ Rocket');
   }

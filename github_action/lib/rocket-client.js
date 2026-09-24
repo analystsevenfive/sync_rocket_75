@@ -1308,6 +1308,24 @@ function extractRelatedPerson(html) {
 
 }
 
+// ตรวจสอบว่าตั๋วเป็นของสาขากรุงเทพฯ หรือไม่ (Ticket No ขึ้นต้นด้วย BK)
+function isBkTicket(ticketNo) {
+  if (ticketNo === null || ticketNo === undefined) return false;
+  return String(ticketNo).trim().toUpperCase().startsWith('BK');
+}
+
+// ตรวจสอบว่ามีชื่อช่างเทคนิคที่ถูกต้องหรือไม่
+// (filter เอาที่ Technician ไม่เท่ากับ "-" หรือ null และไม่เป็นค่าว่าง)
+function hasValidTechnician(technician) {
+  if (technician === null || technician === undefined) return false;
+  const cleaned = String(technician).trim();
+  if (!cleaned) return false;
+  if (/^[-–—,\s]+$/.test(cleaned)) return false;
+  const lower = cleaned.toLowerCase();
+  if (lower === 'null' || lower === 'none' || lower === 'undefined') return false;
+  return true;
+}
+
 
 
 module.exports = {
@@ -1352,5 +1370,7 @@ module.exports = {
   extractRelatedPerson,
   extractLastBreadcrumbText,
   extractRegex,
-  extractTicketStatus
+  extractTicketStatus,
+  isBkTicket,
+  hasValidTechnician
 };
