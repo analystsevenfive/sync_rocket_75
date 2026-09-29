@@ -79,6 +79,29 @@ function applyOrgContext(employees, context) {
   });
 }
 
+function applyDepartmentContext(employees, department) {
+  return employees.map(function(emp) {
+    return Object.assign({}, emp, { department: department || '' });
+  });
+}
+
+function applyTeamHierarchy(employees) {
+  const stack = [];
+  return employees.map(function(emp) {
+    const levelNum = getLevelNumber(emp.level);
+    if (levelNum !== null) {
+      while (stack.length && stack[stack.length - 1].levelNum <= levelNum) stack.pop();
+    }
+    const ancestors = stack.map(function(item) { return item.emp; });
+    const manager = isManagerPosition(emp.position) ? emp : ancestors.slice().reverse().find(function(parent) {
+      return isManagerPosition(parent.position);
+    });
+    const enriched = Object.assign({}, emp, { team: employeeLabel(manager) });
+    if (levelNum !== null) stack.push({ levelNum: levelNum, emp: enriched });
+    return enriched;
+  });
+}
+
 function mergeEmployee(existing, incoming) {
   if (!existing) return incoming;
   const merged = Object.assign({}, existing);
@@ -531,9 +554,9 @@ async function main() {
       const deptId = dept.id || dept;
       const deptHtml = await fetchOrgChartTableAjax(auth, deptId);
       if (deptHtml) {
-        const deptEmployees = extractEmployeesFromHtml(deptHtml, Object.assign({}, baseContext, {
-          department: dept.name || baseContext.department || ''
-        }));
+        const deptEmployees = applyTeamHierarchy(applyDepartmentContext(
+          extractEmployeesFromHtml(deptHtml, baseContext), dept.name
+        ));
         for (const emp of deptEmployees) {
           if (emp.employeeId) {
             allEmployeesMap.set(emp.employeeId, mergeEmployee(allEmployeesMap.get(emp.employeeId), emp));
@@ -549,6 +572,15 @@ async function main() {
   // จัดเรียงตามรหัสพนักงาน
   if (employeeList.length === 0) {
     throw new Error("No employees parsed; keeping previous sheet data.");
+  }
+
+  if (departmentIds.length === 0) {
+    throw new Error('No departments discovered; keeping previous sheet data.');
+  }
+
+  const missingDepartments = employeeList.filter(function(emp) { return !emp.department; }).length;
+  if (missingDepartments > 0) {
+    throw new Error('Department missing for ' + missingDepartments + ' employees; keeping previous sheet data.');
   }
 
   employeeList.sort(function(a, b) {
