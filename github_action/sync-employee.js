@@ -51,6 +51,7 @@ function isManagerPosition(position) {
 function applyOrgContext(employees, context) {
   const stack = [];
   const defaults = context || {};
+  const executives = employees.filter(function(emp) { return isExecutivePosition(emp.position); });
 
   return employees.map(function(emp) {
     const levelNum = getLevelNumber(emp.level);
@@ -61,9 +62,14 @@ function applyOrgContext(employees, context) {
     }
 
     const ancestors = stack.map(function(item) { return item.emp; });
+    const namedExecutive = executives.find(function(executive) {
+      return executive.fullName && emp.position &&
+        /ผู้ช่วยผู้บริหาร|เลขานุการผู้บริหาร/.test(emp.position) &&
+        emp.position.includes(executive.fullName.split(/\s+/)[0]);
+    });
     const manager = (isManagerPosition(emp.position) ? emp : null) || ancestors.slice().reverse().find(function(parent) {
       return isManagerPosition(parent.position);
-    });
+    }) || namedExecutive;
 
     const enriched = Object.assign({}, emp, {
       company: emp.company || defaults.company || '',
@@ -82,6 +88,9 @@ function applyOrgContext(employees, context) {
 
 function inferDepartmentFromPosition(position) {
   const value = String(position || '').trim();
+  if (/การตลาด|ประสานงานขาย|ผู้จัดการขาย|เจ้าหน้าที่ขาย/.test(value)) return 'การตลาด';
+  if (/วิเคราะห์ข้อมูล/.test(value)) return 'วิเคราะห์ข้อมูล';
+  if (/อาคารและสถานที่|อาคารเเละสถานที่/.test(value)) return 'อาคารและสถานที่';
   const patterns = [
     /^(?:\u0e1c\u0e39\u0e49\u0e08\u0e31\u0e14\u0e01\u0e32\u0e23|\u0e1c\u0e39\u0e49\u0e0a\u0e48\u0e27\u0e22\u0e1c\u0e39\u0e49\u0e08\u0e31\u0e14\u0e01\u0e32\u0e23|\u0e2b\u0e31\u0e27\u0e2b\u0e19\u0e49\u0e32|\u0e1c\u0e39\u0e49\u0e0a\u0e48\u0e27\u0e22\u0e2b\u0e31\u0e27\u0e2b\u0e19\u0e49\u0e32)\u0e41\u0e1c\u0e19\u0e01(.+?)(?:\s+\u0e17\u0e35\u0e21\s*[^\s]+)?$/,
     /^\u0e2b\u0e31\u0e27\u0e2b\u0e19\u0e49\u0e32(.+?)(?:\s+\u0e17\u0e35\u0e21\s*[^\s]+)$/
@@ -117,15 +126,21 @@ function applyDepartmentContext(employees, department) {
 
 function applyTeamHierarchy(employees) {
   const stack = [];
+  const executives = employees.filter(function(emp) { return isExecutivePosition(emp.position); });
   return employees.map(function(emp) {
     const levelNum = getLevelNumber(emp.level);
     if (levelNum !== null) {
       while (stack.length && stack[stack.length - 1].levelNum <= levelNum) stack.pop();
     }
     const ancestors = stack.map(function(item) { return item.emp; });
-    const manager = isManagerPosition(emp.position) ? emp : ancestors.slice().reverse().find(function(parent) {
-      return isManagerPosition(parent.position);
+    const namedExecutive = executives.find(function(executive) {
+      return executive.fullName && emp.position &&
+        /ผู้ช่วยผู้บริหาร|เลขานุการผู้บริหาร/.test(emp.position) &&
+        emp.position.includes(executive.fullName.split(/\s+/)[0]);
     });
+    const manager = (isManagerPosition(emp.position) ? emp : ancestors.slice().reverse().find(function(parent) {
+      return isManagerPosition(parent.position);
+    })) || namedExecutive;
     const enriched = Object.assign({}, emp, { team: employeeLabel(manager) });
     if (levelNum !== null) stack.push({ levelNum: levelNum, emp: enriched });
     return enriched;
