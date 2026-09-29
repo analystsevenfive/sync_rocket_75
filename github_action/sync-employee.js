@@ -61,10 +61,10 @@ function applyOrgContext(employees, context) {
     }
 
     const ancestors = stack.map(function(item) { return item.emp; });
-    const executive = ancestors.slice().reverse().find(function(parent) {
+    const executive = (isExecutivePosition(emp.position) ? emp : null) || ancestors.slice().reverse().find(function(parent) {
       return isExecutivePosition(parent.position);
     });
-    const manager = ancestors.slice().reverse().find(function(parent) {
+    const manager = (isManagerPosition(emp.position) ? emp : null) || ancestors.slice().reverse().find(function(parent) {
       return isManagerPosition(parent.position);
     });
 
@@ -86,7 +86,8 @@ function mergeEmployee(existing, incoming) {
   if (!existing) return incoming;
   const merged = Object.assign({}, existing);
   Object.keys(incoming).forEach(function(key) {
-    if (incoming[key] !== undefined && incoming[key] !== null && incoming[key] !== '') {
+    if ((merged[key] === undefined || merged[key] === null || merged[key] === '') &&
+        incoming[key] !== undefined && incoming[key] !== null && incoming[key] !== '') {
       merged[key] = incoming[key];
     }
   });
@@ -339,8 +340,10 @@ async function fetchDepartmentIds(auth, html) {
 
 function extractSelectedOptionText(html, selectNames) {
   if (!html) return '';
-  const names = selectNames.map(function(name) { return rocket.escapeRegex ? rocket.escapeRegex(name) : name; }).join('|');
-  const selectRegex = new RegExp('<select[^>]*name=["\'](?:' + names + ')["\'][^>]*>([\\s\\S]*?)<\\/select>', 'i');
+  const names = selectNames.map(function(name) {
+    return String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }).join('|');
+  const selectRegex = new RegExp('<select[^>]*(?:name|id)=["\'](?:' + names + ')["\'][^>]*>([\\s\\S]*?)<\\/select>', 'i');
   const selectMatch = String(html).match(selectRegex);
   if (!selectMatch) return '';
 
@@ -356,6 +359,39 @@ function extractSelectedOptionText(html, selectNames) {
     if (/\bselected\b/i.test(attrs)) return label;
   }
   return first;
+}
+
+function extractCompanyText(html) {
+  const direct = extractSelectedOptionText(html, [
+    'company', 'company_id', 'hr_company', 'hr_company_id',
+    'search_company', 'search_hr_company'
+  ]);
+  if (direct) return direct;
+
+  const selectRegex = /<select[^>]*>([\s\S]*?)<\/select>/gi;
+  let selectMatch;
+  while ((selectMatch = selectRegex.exec(String(html || ''))) !== null) {
+    const options = [];
+    const optionRegex = /<option([^>]*)value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/gi;
+    let optionMatch;
+    while ((optionMatch = optionRegex.exec(selectMatch[1])) !== null) {
+      const value = String(optionMatch[2] || '').trim();
+      const label = cleanText(optionMatch[3] || '');
+      if (value && value !== '0' && value !== 'x' && label) {
+        options.push({ attrs: optionMatch[1] || '', label: label });
+      }
+    }
+    const companyOptions = options.filter(function(option) {
+      return /^[A-Z0-9]{2,4}\s*-\s*/i.test(option.label);
+    });
+    if (companyOptions.length >= 2) {
+      const selected = companyOptions.find(function(option) {
+        return /\bselected\b/i.test(option.attrs);
+      });
+      return (selected || companyOptions[0]).label;
+    }
+  }
+  return '';
 }
 
 function forceTextIfNumeric(value) {
@@ -393,9 +429,9 @@ async function main() {
   console.log('กำลังโหลดหน้า https://rocket75.com/hr/organization_chart.php ...');
   const mainHtml = await fetchOrgChartPage(auth);
   const baseContext = {
-    company: extractSelectedOptionText(mainHtml, ['company_id', 'hr_company_id', 'search_company']),
-    department: extractSelectedOptionText(mainHtml, ['department_id', 'hr_department_id', 'search_department']),
-    team: extractSelectedOptionText(mainHtml, ['team_id', 'hr_team_id', 'search_team'])
+    company: extractCompanyText(mainHtml),
+    department: '',
+    team: ''
   };
   const mainEmployees = extractEmployeesFromHtml(mainHtml, baseContext);
   console.log('พบพนักงานจากหน้าหลัก: ' + mainEmployees.length + ' คน');
