@@ -67,9 +67,13 @@ function applyOrgContext(employees, context) {
         /ผู้ช่วยผู้บริหาร|เลขานุการผู้บริหาร/.test(emp.position) &&
         emp.position.includes(executive.fullName.split(/\s+/)[0]);
     });
-    const manager = (isManagerPosition(emp.position) ? emp : null) || ancestors.slice().reverse().find(function(parent) {
+    const ancestorsReverse = ancestors.slice().reverse();
+    const previousManager = ancestorsReverse.find(function(parent) {
       return isManagerPosition(parent.position);
-    }) || namedExecutive;
+    });
+    const manager = isManagerPosition(emp.position)
+      ? previousManager || namedExecutive || emp
+      : previousManager || namedExecutive;
 
     const enriched = Object.assign({}, emp, {
       company: emp.company || defaults.company || '',
@@ -138,10 +142,21 @@ function applyTeamHierarchy(employees) {
         /ผู้ช่วยผู้บริหาร|เลขานุการผู้บริหาร/.test(emp.position) &&
         emp.position.includes(executive.fullName.split(/\s+/)[0]);
     });
-    const manager = (isManagerPosition(emp.position) ? emp : ancestors.slice().reverse().find(function(parent) {
+    const parentManager = ancestors.slice().reverse().find(function(parent) {
       return isManagerPosition(parent.position);
-    })) || namedExecutive;
-    const enriched = Object.assign({}, emp, { team: employeeLabel(manager) });
+    });
+    const parentExecutive = ancestors.slice().reverse().find(function(parent) {
+      return isExecutivePosition(parent.position);
+    });
+    const manager = isManagerPosition(emp.position)
+      ? parentManager || namedExecutive || (emp.team ? null : parentExecutive || emp)
+      : parentManager || namedExecutive;
+    const department = emp.department || inferDepartmentFromPosition(manager && manager.position) ||
+      inferDepartmentFromPosition(emp.position) || '';
+    const enriched = Object.assign({}, emp, {
+      department: department,
+      team: manager && manager.employeeId !== emp.employeeId ? employeeLabel(manager) : emp.team || ''
+    });
     if (levelNum !== null) stack.push({ levelNum: levelNum, emp: enriched });
     return enriched;
   });
@@ -494,15 +509,41 @@ function extractSelectedOptionText(html, selectNames) {
 }
 
 function extractCompanySelection(html) {
-  const direct = extractSelectedOption(html, [
+  const companyNames = [
     'company', 'company_id', 'hr_company', 'hr_company_id',
     'search_company', 'search_hr_company'
-  ]);
-  if (direct) return direct;
+  ];
+  const companyNamePattern = /(?:name|id)=["']?(?:company|company_id|hr_company|hr_company_id|search_company|search_hr_company)["']?/i;
+  const namedSelectRegex = /<select[^>]*>([\s\S]*?)<\/select>/gi;
+  const namedCompanyOptions = [];
+  let namedSelect;
+  while ((namedSelect = namedSelectRegex.exec(String(html || ''))) !== null) {
+    const openingTag = namedSelect[0].slice(0, namedSelect[0].indexOf('>') + 1);
+    if (!companyNamePattern.test(openingTag)) continue;
+    const selectOptions = [];
+    const optionRegex = /<option([^>]*)value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/gi;
+    let optionMatch;
+    while ((optionMatch = optionRegex.exec(namedSelect[1])) !== null) {
+      const value = String(optionMatch[2] || '').trim();
+      const label = cleanText(optionMatch[3] || '');
+      if (!value || value === '0' || value === 'x' || !label) continue;
+      const option = { value: value, label: label };
+      selectOptions.push({ option: option, selected: /\bselected\b/i.test(optionMatch[1] || '') });
+    }
+    namedCompanyOptions.push(selectOptions);
+  }
+  const namedCompanySelected = namedCompanyOptions.map(function(options) {
+    return options.find(function(item) { return item.selected; });
+  }).find(Boolean);
+  if (namedCompanySelected) return namedCompanySelected.option;
+  const namedCompanyFallback = namedCompanyOptions.find(function(options) { return options.length; });
 
   const selectRegex = /<select[^>]*>([\s\S]*?)<\/select>/gi;
+  let companyFallback = null;
+  const selects = [];
   let selectMatch;
   while ((selectMatch = selectRegex.exec(String(html || ''))) !== null) {
+    const selectHtml = selectMatch[0];
     const options = [];
     const optionRegex = /<option([^>]*)value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/gi;
     let optionMatch;
@@ -516,14 +557,17 @@ function extractCompanySelection(html) {
     const companyOptions = options.filter(function(option) {
       return /^[A-Z0-9]{2,4}\s*-\s*/i.test(option.label);
     });
-    if (companyOptions.length >= 2) {
-      const selected = companyOptions.find(function(option) {
-        return /\bselected\b/i.test(option.attrs);
-      });
-      return selected || companyOptions[0];
-    }
+    const isCompanySelect = companyOptions.length >= 2;
+    selects.push({ html: selectHtml, companyOptions: companyOptions, isCompanySelect: isCompanySelect });
+    if (isCompanySelect && !companyFallback) companyFallback = companyOptions[0];
   }
-  return null;
+
+  const selectedCompany = selects.map(function(select) {
+    if (!select.isCompanySelect) return null;
+    return select.companyOptions.find(function(option) { return /\bselected\b/i.test(option.attrs); });
+  }).find(Boolean);
+  if (selectedCompany) return selectedCompany;
+  return namedCompanyFallback ? namedCompanyFallback[0].option : companyFallback;
 }
 
 function extractCompanyText(html) {
@@ -599,7 +643,8 @@ async function main() {
     throw new Error("No employees parsed; keeping previous sheet data.");
   }
 
-  employeeList.sort(function(a, b) {
+  const orderedEmployees = applyTeamHierarchy(employeeList);
+  orderedEmployees.sort(function(a, b) {
     return (a.employeeId || '').localeCompare(b.employeeId || '');
   });
 
@@ -613,7 +658,7 @@ async function main() {
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, EMPLOYEE_SHEET_NAME);
 
   const lastSync = rocket.formatDateTimeBangkok(new Date());
-  const rows = employeeList.map(function(emp) {
+  const rows = orderedEmployees.map(function(emp) {
     return employeeToRow(emp, lastSync);
   });
 
