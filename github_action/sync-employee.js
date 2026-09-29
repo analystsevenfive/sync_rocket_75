@@ -61,16 +61,13 @@ function applyOrgContext(employees, context) {
     }
 
     const ancestors = stack.map(function(item) { return item.emp; });
-    const executive = (isExecutivePosition(emp.position) ? emp : null) || ancestors.slice().reverse().find(function(parent) {
-      return isExecutivePosition(parent.position);
-    });
     const manager = (isManagerPosition(emp.position) ? emp : null) || ancestors.slice().reverse().find(function(parent) {
       return isManagerPosition(parent.position);
     });
 
     const enriched = Object.assign({}, emp, {
       company: emp.company || defaults.company || '',
-      department: emp.department || employeeLabel(executive) || defaults.department || '',
+      department: emp.department || defaults.department || '',
       team: emp.team || employeeLabel(manager) || defaults.team || ''
     });
 
