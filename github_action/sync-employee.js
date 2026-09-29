@@ -14,6 +14,9 @@ const ROCKET_BASE = 'https://rocket75.com';
 const EMPLOYEE_SHEET_NAME = 'Employee';
 
 const EMPLOYEE_HEADERS = [
+  'Company',
+  'Department',
+  'Team',
   'Position',
   'Level',
   'Employee ID',
@@ -22,6 +25,73 @@ const EMPLOYEE_HEADERS = [
   'Desk',
   'Last Sync'
 ];
+
+function getLevelNumber(level) {
+  const match = String(level || '').match(/(\d+(?:\.\d+)?)/);
+  return match ? Number(match[1]) : null;
+}
+
+function employeeLabel(emp) {
+  if (!emp) return '';
+  const parts = [];
+  if (emp.position) parts.push(emp.position);
+  if (emp.fullName) parts.push(emp.fullName);
+  if (emp.employeeId) parts.push(emp.employeeId);
+  return parts.join(' - ');
+}
+
+function isExecutivePosition(position) {
+  return /กรรมการ|ผู้บริหาร|บริหาร/.test(String(position || ''));
+}
+
+function isManagerPosition(position) {
+  return /ผู้จัดการ|หัวหน้า/.test(String(position || ''));
+}
+
+function applyOrgContext(employees, context) {
+  const stack = [];
+  const defaults = context || {};
+
+  return employees.map(function(emp) {
+    const levelNum = getLevelNumber(emp.level);
+    if (levelNum !== null) {
+      while (stack.length > 0 && stack[stack.length - 1].levelNum <= levelNum) {
+        stack.pop();
+      }
+    }
+
+    const ancestors = stack.map(function(item) { return item.emp; });
+    const executive = ancestors.slice().reverse().find(function(parent) {
+      return isExecutivePosition(parent.position);
+    });
+    const manager = ancestors.slice().reverse().find(function(parent) {
+      return isManagerPosition(parent.position);
+    });
+
+    const enriched = Object.assign({}, emp, {
+      company: emp.company || defaults.company || '',
+      department: emp.department || employeeLabel(executive) || defaults.department || '',
+      team: emp.team || employeeLabel(manager) || defaults.team || ''
+    });
+
+    if (levelNum !== null) {
+      stack.push({ levelNum: levelNum, emp: enriched });
+    }
+
+    return enriched;
+  });
+}
+
+function mergeEmployee(existing, incoming) {
+  if (!existing) return incoming;
+  const merged = Object.assign({}, existing);
+  Object.keys(incoming).forEach(function(key) {
+    if (incoming[key] !== undefined && incoming[key] !== null && incoming[key] !== '') {
+      merged[key] = incoming[key];
+    }
+  });
+  return merged;
+}
 
 /**
  * ทำความสะอาดข้อความและตัดช่องว่าง
@@ -107,7 +177,7 @@ function parseEmployeeLines(lines) {
 /**
  * ดึงรายการพนักงานทั้งหมดจาก HTML (ทั้งแบบบล็อก card/node และ regex scan ทั้งหน้า)
  */
-function extractEmployeesFromHtml(html) {
+function extractEmployeesFromHtml(html, context) {
   const employees = [];
   const seenIds = new Set();
 
@@ -147,7 +217,7 @@ function extractEmployeesFromHtml(html) {
     }
   }
 
-  return employees;
+  return applyOrgContext(employees, context);
 }
 
 /**
@@ -210,19 +280,23 @@ async function fetchOrgChartTableAjax(auth, departmentId) {
  * ดึงรายการแผนกเพื่อดึงข้อมูลให้ครบทุกแผนก
  */
 async function fetchDepartmentIds(auth, html) {
-  const deptIds = new Set();
+  const deptMap = new Map();
+
+  function addDepartment(id, label) {
+    const val = String(id || '').trim();
+    if (val && val !== '0' && val !== 'x' && val !== '') {
+      deptMap.set(val, cleanText(label || val));
+    }
+  }
 
   // ดึงจาก <select> ใน HTML
   const selectRegex = /<select[^>]*name=["'](?:department_id|hr_department_id|search_department)["'][^>]*>([\s\S]*?)<\/select>/gi;
   const match = selectRegex.exec(html);
   if (match) {
-    const optionRegex = /<option[^>]*value=["']([^"']+)["']/gi;
+    const optionRegex = /<option[^>]*value=["']([^"']+)["'][^>]*>([\s\S]*?)<\/option>/gi;
     let optMatch;
     while ((optMatch = optionRegex.exec(match[1])) !== null) {
-      const val = optMatch[1].trim();
-      if (val && val !== '0' && val !== 'x' && val !== '') {
-        deptIds.add(val);
-      }
+      addDepartment(optMatch[1], optMatch[2]);
     }
   }
 
@@ -251,17 +325,37 @@ async function fetchDepartmentIds(auth, html) {
   }
   if (res.status === 200) {
     const deptHtml = await res.text();
-    const optRegex = /<option[^>]*value=["']([^"']+)["']/gi;
+    const optRegex = /<option[^>]*value=["']([^"']+)["'][^>]*>([\s\S]*?)<\/option>/gi;
     let optMatch;
     while ((optMatch = optRegex.exec(deptHtml)) !== null) {
-      const val = optMatch[1].trim();
-      if (val && val !== '0' && val !== 'x' && val !== '') {
-        deptIds.add(val);
-      }
+      addDepartment(optMatch[1], optMatch[2]);
     }
   }
 
-  return Array.from(deptIds);
+  return Array.from(deptMap.entries()).map(function(entry) {
+    return { id: entry[0], name: entry[1] };
+  });
+}
+
+function extractSelectedOptionText(html, selectNames) {
+  if (!html) return '';
+  const names = selectNames.map(function(name) { return rocket.escapeRegex ? rocket.escapeRegex(name) : name; }).join('|');
+  const selectRegex = new RegExp('<select[^>]*name=["\'](?:' + names + ')["\'][^>]*>([\\s\\S]*?)<\\/select>', 'i');
+  const selectMatch = String(html).match(selectRegex);
+  if (!selectMatch) return '';
+
+  const optionRegex = /<option([^>]*)value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/gi;
+  let first = '';
+  let optionMatch;
+  while ((optionMatch = optionRegex.exec(selectMatch[1])) !== null) {
+    const attrs = optionMatch[1] || '';
+    const value = String(optionMatch[2] || '').trim();
+    const label = cleanText(optionMatch[3] || '');
+    if (!label || value === '0' || value === 'x') continue;
+    if (!first) first = label;
+    if (/\bselected\b/i.test(attrs)) return label;
+  }
+  return first;
 }
 
 function forceTextIfNumeric(value) {
@@ -274,6 +368,9 @@ function forceTextIfNumeric(value) {
 
 function employeeToRow(emp, lastSync) {
   return [
+    emp.company || '',
+    emp.department || '',
+    emp.team || '',
     emp.position || '',
     emp.level || '',
     forceTextIfNumeric(emp.employeeId),
@@ -295,22 +392,27 @@ async function main() {
   // 1. ดึงหน้าหลัก organization_chart.php
   console.log('กำลังโหลดหน้า https://rocket75.com/hr/organization_chart.php ...');
   const mainHtml = await fetchOrgChartPage(auth);
-  const mainEmployees = extractEmployeesFromHtml(mainHtml);
+  const baseContext = {
+    company: extractSelectedOptionText(mainHtml, ['company_id', 'hr_company_id', 'search_company']),
+    department: extractSelectedOptionText(mainHtml, ['department_id', 'hr_department_id', 'search_department']),
+    team: extractSelectedOptionText(mainHtml, ['team_id', 'hr_team_id', 'search_team'])
+  };
+  const mainEmployees = extractEmployeesFromHtml(mainHtml, baseContext);
   console.log('พบพนักงานจากหน้าหลัก: ' + mainEmployees.length + ' คน');
   for (const emp of mainEmployees) {
     if (emp.employeeId) {
-      allEmployeesMap.set(emp.employeeId, emp);
+      allEmployeesMap.set(emp.employeeId, mergeEmployee(allEmployeesMap.get(emp.employeeId), emp));
     }
   }
 
   // 2. ดึงจาก Table.php
   const tableHtml = await fetchOrgChartTableAjax(auth, '');
   if (tableHtml) {
-    const tableEmployees = extractEmployeesFromHtml(tableHtml);
+    const tableEmployees = extractEmployeesFromHtml(tableHtml, baseContext);
     console.log('พบพนักงานจาก Table.php: ' + tableEmployees.length + ' คน');
     for (const emp of tableEmployees) {
       if (emp.employeeId) {
-        allEmployeesMap.set(emp.employeeId, emp);
+        allEmployeesMap.set(emp.employeeId, mergeEmployee(allEmployeesMap.get(emp.employeeId), emp));
       }
     }
   }
@@ -318,14 +420,17 @@ async function main() {
   // 3. ตรวจสอบแผนกและดึงเพิ่มเติมถ้ามีหลายแผนก
   const departmentIds = await fetchDepartmentIds(auth, mainHtml);
   if (departmentIds.length > 0) {
-    console.log('พบแผนกทั้งหมด ' + departmentIds.length + ' แผนก: ' + departmentIds.join(', '));
-    for (const deptId of departmentIds) {
+    console.log('พบแผนกทั้งหมด ' + departmentIds.length + ' แผนก: ' + departmentIds.map(function(d) { return d.id || d; }).join(', '));
+    for (const dept of departmentIds) {
+      const deptId = dept.id || dept;
       const deptHtml = await fetchOrgChartTableAjax(auth, deptId);
       if (deptHtml) {
-        const deptEmployees = extractEmployeesFromHtml(deptHtml);
+        const deptEmployees = extractEmployeesFromHtml(deptHtml, Object.assign({}, baseContext, {
+          department: dept.name || baseContext.department || ''
+        }));
         for (const emp of deptEmployees) {
           if (emp.employeeId) {
-            allEmployeesMap.set(emp.employeeId, emp);
+            allEmployeesMap.set(emp.employeeId, mergeEmployee(allEmployeesMap.get(emp.employeeId), emp));
           }
         }
       }
