@@ -261,6 +261,8 @@ async function fetchOrgChartTableAjax(auth, departmentId) {
   if (departmentId !== undefined && departmentId !== '') {
     body.set('department_id', String(departmentId));
     body.set('hr_department_id', String(departmentId));
+    body.set('search_department', String(departmentId));
+    body.set('department', String(departmentId));
   }
 
   const res = await rocket.fetchWithTimeout(ROCKET_BASE + '/hr/ajax/organization_chart/Table.php', {
@@ -277,7 +279,7 @@ async function fetchOrgChartTableAjax(auth, departmentId) {
 /**
  * ดึงรายการแผนกเพื่อดึงข้อมูลให้ครบทุกแผนก
  */
-async function fetchDepartmentIds(auth, html) {
+async function fetchDepartmentIds(auth, html, companyId) {
   const deptMap = new Map();
 
   function addDepartment(id, label) {
@@ -311,6 +313,13 @@ async function fetchDepartmentIds(auth, html) {
   const body = new URLSearchParams();
   body.set('token', auth.token);
   body.set('key', auth.key);
+  if (companyId) {
+    body.set('company_id', String(companyId));
+    body.set('hr_company_id', String(companyId));
+    body.set('search_company', String(companyId));
+    body.set('company', String(companyId));
+    body.set('id', String(companyId));
+  }
 
   const res = await rocket.fetchWithTimeout(ROCKET_BASE + '/hr/ajax/organization_chart/Get_hr_department.php', {
     method: 'POST',
@@ -335,14 +344,14 @@ async function fetchDepartmentIds(auth, html) {
   });
 }
 
-function extractSelectedOptionText(html, selectNames) {
+function extractSelectedOption(html, selectNames) {
   if (!html) return '';
   const names = selectNames.map(function(name) {
     return String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }).join('|');
   const selectRegex = new RegExp('<select[^>]*(?:name|id)=["\'](?:' + names + ')["\'][^>]*>([\\s\\S]*?)<\\/select>', 'i');
   const selectMatch = String(html).match(selectRegex);
-  if (!selectMatch) return '';
+  if (!selectMatch) return null;
 
   const optionRegex = /<option([^>]*)value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/gi;
   let first = '';
@@ -352,14 +361,20 @@ function extractSelectedOptionText(html, selectNames) {
     const value = String(optionMatch[2] || '').trim();
     const label = cleanText(optionMatch[3] || '');
     if (!label || value === '0' || value === 'x') continue;
-    if (!first) first = label;
-    if (/\bselected\b/i.test(attrs)) return label;
+    const option = { value: value, label: label };
+    if (!first) first = option;
+    if (/\bselected\b/i.test(attrs)) return option;
   }
   return first;
 }
 
-function extractCompanyText(html) {
-  const direct = extractSelectedOptionText(html, [
+function extractSelectedOptionText(html, selectNames) {
+  const option = extractSelectedOption(html, selectNames);
+  return option ? option.label : '';
+}
+
+function extractCompanySelection(html) {
+  const direct = extractSelectedOption(html, [
     'company', 'company_id', 'hr_company', 'hr_company_id',
     'search_company', 'search_hr_company'
   ]);
@@ -375,7 +390,7 @@ function extractCompanyText(html) {
       const value = String(optionMatch[2] || '').trim();
       const label = cleanText(optionMatch[3] || '');
       if (value && value !== '0' && value !== 'x' && label) {
-        options.push({ attrs: optionMatch[1] || '', label: label });
+        options.push({ attrs: optionMatch[1] || '', value: value, label: label });
       }
     }
     const companyOptions = options.filter(function(option) {
@@ -385,10 +400,15 @@ function extractCompanyText(html) {
       const selected = companyOptions.find(function(option) {
         return /\bselected\b/i.test(option.attrs);
       });
-      return (selected || companyOptions[0]).label;
+      return selected || companyOptions[0];
     }
   }
-  return '';
+  return null;
+}
+
+function extractCompanyText(html) {
+  const company = extractCompanySelection(html);
+  return company ? company.label : '';
 }
 
 function forceTextIfNumeric(value) {
@@ -425,8 +445,9 @@ async function main() {
   // 1. ดึงหน้าหลัก organization_chart.php
   console.log('กำลังโหลดหน้า https://rocket75.com/hr/organization_chart.php ...');
   const mainHtml = await fetchOrgChartPage(auth);
+  const companySelection = extractCompanySelection(mainHtml);
   const baseContext = {
-    company: extractCompanyText(mainHtml),
+    company: companySelection ? companySelection.label : '',
     department: '',
     team: ''
   };
@@ -451,7 +472,7 @@ async function main() {
   }
 
   // 3. ตรวจสอบแผนกและดึงเพิ่มเติมถ้ามีหลายแผนก
-  const departmentIds = await fetchDepartmentIds(auth, mainHtml);
+  const departmentIds = await fetchDepartmentIds(auth, mainHtml, companySelection ? companySelection.value : '');
   if (departmentIds.length > 0) {
     console.log('พบแผนกทั้งหมด ' + departmentIds.length + ' แผนก: ' + departmentIds.map(function(d) { return d.id || d; }).join(', '));
     for (const dept of departmentIds) {
