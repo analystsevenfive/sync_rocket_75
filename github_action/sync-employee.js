@@ -300,6 +300,42 @@ async function fetchDepartmentIds(auth, html, companyId) {
     }
   }
 
+  // Rocket has used generated select names in some versions. The visible
+  // filter order is Company -> Department, so use the select following the
+  // company list when the known department names are not present.
+  if (deptMap.size === 0) {
+    const selects = [];
+    const anySelectRegex = /<select[^>]*>([\s\S]*?)<\/select>/gi;
+    let selectMatch;
+    while ((selectMatch = anySelectRegex.exec(String(html || ''))) !== null) {
+      const options = [];
+      const optionRegex = /<option[^>]*value=["']([^"']+)["'][^>]*>([\s\S]*?)<\/option>/gi;
+      let optionMatch;
+      while ((optionMatch = optionRegex.exec(selectMatch[1])) !== null) {
+        const value = String(optionMatch[1] || '').trim();
+        const label = cleanText(optionMatch[2] || '');
+        if (value && value !== '0' && value !== 'x' && label) {
+          options.push({ id: value, name: label });
+        }
+      }
+      selects.push(options);
+    }
+
+    const companyIndex = selects.findIndex(function(options) {
+      return options.filter(function(option) {
+        return /^[A-Z0-9]{2,4}\s*-\s*/i.test(option.name);
+      }).length >= 2;
+    });
+    if (companyIndex >= 0) {
+      for (let i = companyIndex + 1; i < selects.length; i++) {
+        if (selects[i].length > 0) {
+          selects[i].forEach(function(dept) { addDepartment(dept.id, dept.name); });
+          break;
+        }
+      }
+    }
+  }
+
   // หรือลองดึงจาก Get_hr_department.php
   const headers = {
     Origin: ROCKET_BASE,
@@ -336,6 +372,22 @@ async function fetchDepartmentIds(auth, html, companyId) {
     let optMatch;
     while ((optMatch = optRegex.exec(deptHtml)) !== null) {
       addDepartment(optMatch[1], optMatch[2]);
+    }
+    if (deptMap.size === 0) {
+      try {
+        const data = JSON.parse(deptHtml);
+        const rows = Array.isArray(data) ? data : (data.data || data.rows || data.result || []);
+        if (Array.isArray(rows)) {
+          rows.forEach(function(row) {
+            addDepartment(
+              row.id || row.value || row.department_id || row.hr_department_id,
+              row.name || row.label || row.text || row.department_name
+            );
+          });
+        }
+      } catch (e) {
+        // HTML option responses are handled above.
+      }
     }
   }
 
