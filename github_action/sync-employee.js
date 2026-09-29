@@ -546,56 +546,12 @@ async function main() {
     }
   }
 
-  // 3. ตรวจสอบแผนกและดึงเพิ่มเติมถ้ามีหลายแผนก
-  const departmentIds = await fetchDepartmentIds(auth, mainHtml, companySelection ? companySelection.value : '');
-  let departmentFetchEmployeeCount = 0;
-  if (departmentIds.length > 0) {
-    console.log('พบแผนกทั้งหมด ' + departmentIds.length + ' แผนก: ' + departmentIds.map(function(d) { return d.id || d; }).join(', '));
-    for (const dept of departmentIds) {
-      const deptId = dept.id || dept;
-      const deptHtml = await fetchOrgChartTableAjax(auth, deptId);
-      if (deptHtml) {
-        const deptEmployees = applyTeamHierarchy(applyDepartmentContext(
-          extractEmployeesFromHtml(deptHtml, baseContext), dept.name
-        ));
-        departmentFetchEmployeeCount += deptEmployees.length;
-        for (const emp of deptEmployees) {
-          if (emp.employeeId) {
-            const previous = allEmployeesMap.get(emp.employeeId);
-            allEmployeesMap.set(emp.employeeId, previous
-              ? Object.assign({}, mergeEmployee(previous, emp), {
-                department: emp.department,
-                team: emp.team
-              })
-              : emp);
-          }
-        }
-      }
-    }
-  }
-
   const employeeList = Array.from(allEmployeesMap.values());
   console.log('รวมพนักงานทั้งหมดที่ไม่ซ้ำกัน: ' + employeeList.length + ' คน');
 
   // จัดเรียงตามรหัสพนักงาน
   if (employeeList.length === 0) {
     throw new Error("No employees parsed; keeping previous sheet data.");
-  }
-
-  if (departmentIds.length === 0) {
-    throw new Error('No departments discovered; keeping previous sheet data.');
-  }
-  if (departmentFetchEmployeeCount === 0) {
-    throw new Error('Department tables returned no employees; keeping previous sheet data.');
-  }
-
-  const missingDepartments = employeeList.filter(function(emp) { return !emp.department; }).length;
-  if (missingDepartments > 0) {
-    throw new Error('Department missing for ' + missingDepartments + ' employees; keeping previous sheet data.');
-  }
-  const missingTeams = employeeList.filter(function(emp) { return !emp.team; }).length;
-  if (missingTeams > 0) {
-    throw new Error('Team hierarchy missing for ' + missingTeams + ' employees; keeping previous sheet data.');
   }
 
   employeeList.sort(function(a, b) {
