@@ -18,10 +18,16 @@ function isShopWork(ticket) {
   return /คลังสินค้า|ตึก\s*75|test\s*kitchen|warehouse|workshop|ศูนย์บริการ/.test(text);
 }
 
+function cleanTechnician(value) {
+  const name = String(value || '').trim();
+  return !name || name === '-' || name.toLowerCase() === 'ไม่ระบุ' ? '' : name;
+}
+
 async function main() {
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) throw new Error('SPREADSHEET_ID is required');
 
+  const auth = await rocket.rocketLogin();
   const sheets = await sheetsLib.getSheetsClient();
   const today = rocket.computeTodayRangeBangkok().dateParts;
   const todayKey = `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
@@ -43,7 +49,7 @@ async function main() {
 
   const header = values[headerRowIndex];
   const sourceColumns = [
-    'Inspection Status', 'Sales Invoice No.', 'Ticket ID', 'Ticket No',
+    'Inspection Status', 'Sales Invoice No.', 'Ticket ID', 'Parent Ticket ID', 'Ticket No',
     'Status', 'Appointment', 'Report Date', 'Customer', 'Branch', 'Contact',
     'Phone', 'Problem Reported', 'Work Description', 'Machine Location',
     'Product Code', 'Product Name', 'Serial', 'End Time', 'Technician',
@@ -60,14 +66,30 @@ async function main() {
       : '';
   };
 
-  const rows = values.slice(headerRowIndex + 1)
+  const selectedRows = values.slice(headerRowIndex + 1)
     .filter(row => {
       const key = reportDateKey(row[col['Report Date']]);
       return key >= dateFrom && key <= dateTo;
-    })
+    });
+
+  // Tickets' Technician field is often "ไม่ระบุ". Match Daily Repair Update
+  // by reading the assigned technicians from each ticket's parent checkrepair table.
+  const parentIds = [...new Set(selectedRows
+    .map(row => row[col['Parent Ticket ID']])
+    .filter(Boolean))];
+  const technicianByKey = {};
+  const checkRepairResults = await rocket.mapConcurrentStrict(
+    parentIds,
+    30,
+    async parentId => rocket.extractCheckRepairInfo(await rocket.getCheckRepairHtml(parentId, auth))
+  );
+  checkRepairResults.forEach(info => Object.assign(technicianByKey, info));
+
+  const rows = selectedRows
     .sort((a, b) => rocket.parseAppointmentTimestamp(a[col.Appointment]) - rocket.parseAppointmentTimestamp(b[col.Appointment]))
     .map(row => {
       const get = name => row[col[name]] || '';
+      const ticketInfo = technicianByKey[get('Ticket ID')] || technicianByKey[get('Ticket No')] || {};
       const status = get('Status');
       const item = {
         branch: get('Branch'), customer: get('Customer'),
@@ -80,7 +102,8 @@ async function main() {
         get('End Time'), get('Inspection Status'), '', status, '', '',
         get('Sales Invoice No.'), get('Customer'), get('Branch'), '',
         get('Contact'), get('Phone'), get('Problem Reported'), get('Product Code'),
-        get('Product Name'), get('Technician'), '', get('Serial'), get('URL'),
+        get('Product Name'), ticketInfo.technicians || cleanTechnician(get('Technician')) || 'ไม่ระบุ',
+        ticketInfo.team || '', get('Serial'), get('URL'),
         get('Last Sync'), isShopWork(item) ? 'Shop work' : 'On-site'
       ];
     });
