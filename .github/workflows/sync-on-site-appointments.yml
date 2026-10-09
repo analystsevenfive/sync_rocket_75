@@ -23,8 +23,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Update today's on-site appointments
+      - name: Fetch today's on-site appointments from Rocket
         env:
+          ROCKET_USERNAME: ${{ secrets.ROCKET_USERNAME }}
+          ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: node sync-on-site-appointments.js
