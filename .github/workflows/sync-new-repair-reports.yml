@@ -2,6 +2,15 @@ name: Sync New Repair Reports
 
 on:
   workflow_dispatch:
+    inputs:
+      report_date_from:
+        description: 'Report Date from (YYYY-MM-DD; blank = today)'
+        required: false
+        type: string
+      report_date_to:
+        description: 'Report Date to (YYYY-MM-DD; blank = same as from, or today)'
+        required: false
+        type: string
 
 concurrency:
   group: sync-new-repair-reports
@@ -23,8 +32,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Update today's new repair reports
+      - name: Update new repair reports by Report Date
         env:
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          REPORT_DATE_FROM: ${{ inputs.report_date_from }}
+          REPORT_DATE_TO: ${{ inputs.report_date_to }}
         run: node sync-new-repair-reports.js

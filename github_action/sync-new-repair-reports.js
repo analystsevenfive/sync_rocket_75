@@ -2,14 +2,14 @@ const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
 const SOURCE_SHEET = 'Tickets';
-const TARGET_SHEET = 'งานแจ้งซ่อมใหม่';
+const TARGET_SHEET = 'New Repair Reports';
 
 const HEADERS = [
   'Ticket ID', 'Ticket No', 'Report Date', 'Appointment', 'End Time',
   'Inspection Status', 'Active Stage', 'Status 1', 'Status 2', 'Status 3',
   'Sales Invoice No.', 'Customer', 'Branch', 'Customer Code', 'Contact',
   'Phone', 'Problem Reported', 'Product Code', 'Product Name', 'Technician',
-  'Team', 'Serial', 'URL', 'Last Sync', 'งานshop/นอกสถานที่'
+  'Team', 'Serial', 'URL', 'Last Sync', 'Shop / On-site Work'
 ];
 
 function isShopWork(ticket) {
@@ -25,6 +25,12 @@ async function main() {
   const sheets = await sheetsLib.getSheetsClient();
   const today = rocket.computeTodayRangeBangkok().dateParts;
   const todayKey = `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
+  const dateFrom = process.env.REPORT_DATE_FROM || todayKey;
+  const dateTo = process.env.REPORT_DATE_TO || process.env.REPORT_DATE_FROM || todayKey;
+  const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!isoDatePattern.test(dateFrom) || !isoDatePattern.test(dateTo) || dateFrom > dateTo) {
+    throw new Error('Report Date range must use YYYY-MM-DD and the start date must be on or before the end date');
+  }
 
   const source = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -55,7 +61,10 @@ async function main() {
   };
 
   const rows = values.slice(headerRowIndex + 1)
-    .filter(row => reportDateKey(row[col['Report Date']]) === todayKey)
+    .filter(row => {
+      const key = reportDateKey(row[col['Report Date']]);
+      return key >= dateFrom && key <= dateTo;
+    })
     .sort((a, b) => rocket.parseAppointmentTimestamp(a[col.Appointment]) - rocket.parseAppointmentTimestamp(b[col.Appointment]))
     .map(row => {
       const get = name => row[col[name]] || '';
@@ -78,7 +87,7 @@ async function main() {
 
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, TARGET_SHEET);
   await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, TARGET_SHEET, HEADERS, rows);
-  console.log(`Updated ${TARGET_SHEET} from ${SOURCE_SHEET} Report Date for ${todayKey}: ${rows.length} rows`);
+  console.log(`Updated ${TARGET_SHEET} from ${SOURCE_SHEET} Report Date for ${dateFrom} to ${dateTo}: ${rows.length} rows`);
 }
 
 main().catch(error => {
