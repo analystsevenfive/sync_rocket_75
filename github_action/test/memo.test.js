@@ -12,6 +12,8 @@ test('Memo detail yields province and inclusive count of scheduled dates', () =>
     { province: 'สงขลา', date: '12-14 ตุลาคม 2569', countDate: 3 });
   assert.deepEqual(splitDetails('กำหนดการช่างเดินทางติดตั้ง จ.เพชรบุรี วันที่ 8-9 ตุลาคม 2569'),
     { province: 'เพชรบุรี', date: '8-9 ตุลาคม 2569', countDate: 2 });
+  assert.deepEqual(splitDetails('กำหนดการช่างเดินทางติดตั้ง งานซ่อม จ. เชียงใหม่-เชียงราย วันที่ 6-9 ตุลาคม 2569'),
+    { province: 'เชียงใหม่-เชียงราย', date: '6-9 ตุลาคม 2569', countDate: 4 });
 });
 
 test('Memo table keeps content and detail in separate columns', () => {

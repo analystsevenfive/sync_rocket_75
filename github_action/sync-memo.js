@@ -30,7 +30,7 @@ function memoRange(now = new Date()) {
 
 function splitDetails(value) {
   const detail = String(value || '').trim();
-  const province = detail.match(/(?:จ\.|จังหวัด)\s*([ก-๙]+)(?=\s|วันที่|$)/)?.[1] || '';
+  const province = detail.match(/(?:จ\.|จังหวัด)\s*([ก-๙]+(?:\s*[-–]\s*[ก-๙]+)*)(?=\s|วันที่|$)/)?.[1].replace(/\s*[-–]\s*/g, '-') || '';
   const dateMatch = detail.match(/วันที่\s*(\d{1,2})(?:\s*[-–ถึง]+\s*(\d{1,2}))?\s*(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s*(\d{4})/);
   if (!dateMatch) return { province, date: '', countDate: '' };
   const [, startText, endText, monthName, yearText] = dateMatch;
