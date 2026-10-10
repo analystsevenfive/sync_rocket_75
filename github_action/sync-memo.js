@@ -49,8 +49,12 @@ function splitTechniciansAndPlates(value) {
   const technicians = [];
   const plates = [];
   for (const line of String(value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean)) {
-    const plate = line.match(/^(?:\d+[.)]?\s*)?(?:ทะเบียน\s*)?([ก-ฮ]{1,3}\s*\d{1,4})(?=\s*[-–]|\s*$)/u);
-    if (plate) plates.push(plate[1].replace(/\s+/g, ''));
+    const plate = line.match(/^(?:\d+[.)]?\s*)?(?:ทะเบียน\s*)?([ก-ฮ]{1,3}\s*\d{1,4})(?:\s*[-–]\s*(.*))?$/u);
+    if (plate) {
+      const registration = plate[1].replace(/\s+/g, '');
+      const vehicle = (plate[2] || '').replace(/\s*ช่าง\s*$/, '').trim();
+      plates.push(vehicle ? `${registration} - ${vehicle}` : registration);
+    }
     else technicians.push(line);
   }
   return { technicians: technicians.join('\n'), plates: [...new Set(plates)].join('\n') };

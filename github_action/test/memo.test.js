@@ -4,7 +4,9 @@ const { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows } = 
 
 test('vehicle registration is separated from technician names', () => {
   assert.deepEqual(splitTechniciansAndPlates('1.ช่างคนแรก\n2.ช่างคนที่สอง\n3ฅย75 - Isuzu 75 ช่าง'),
-    { technicians: '1.ช่างคนแรก\n2.ช่างคนที่สอง', plates: 'ฅย75' });
+    { technicians: '1.ช่างคนแรก\n2.ช่างคนที่สอง', plates: 'ฅย75 - Isuzu 75' });
+  assert.deepEqual(splitTechniciansAndPlates('1.ช่างคนแรก\n2ฒส75 - Isuzu 75 ช่าง'),
+    { technicians: '1.ช่างคนแรก', plates: 'ฒส75 - Isuzu 75' });
   assert.deepEqual(splitTechniciansAndPlates('1.ช่างคนแรก\n2.ช่างคนที่สอง'),
     { technicians: '1.ช่างคนแรก\n2.ช่างคนที่สอง', plates: '' });
 });
