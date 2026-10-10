@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { dateKey, extractParentRows } = require('../sync-new-repair-reports');
+const { dateKey, inputDateKey, extractParentRows } = require('../sync-new-repair-reports');
+
+test('workflow dates accept blank, ISO, and Rocket display format', () => {
+  assert.equal(inputDateKey('', '2026-10-10'), '2026-10-10');
+  assert.equal(inputDateKey(' 2026-10-10 ', ''), '2026-10-10');
+  assert.equal(inputDateKey('10/10/2026', ''), '2026-10-10');
+  assert.throws(() => inputDateKey('31/02/2026', ''), /Invalid Report Date/);
+});
 
 test('new repair reports reads newly created parent tickets from Rocket list', () => {
   const html = `<table><tr>

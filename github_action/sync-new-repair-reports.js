@@ -15,6 +15,22 @@ function dateKey(value) {
   return parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : '';
 }
 
+function inputDateKey(value, fallback) {
+  const input = String(value || '').trim();
+  if (!input) return fallback;
+  if (!/^\d{4}-\d{1,2}-\d{1,2}$/.test(input) && !/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(input)) {
+    throw new Error(`Invalid Report Date "${input}"; use YYYY-MM-DD or DD/MM/YYYY`);
+  }
+  const key = dateKey(input);
+  if (!key) throw new Error(`Invalid Report Date "${input}"`);
+  const [year, month, day] = key.split('-').map(Number);
+  const actual = new Date(Date.UTC(year, month - 1, day));
+  if (actual.getUTCFullYear() !== year || actual.getUTCMonth() + 1 !== month || actual.getUTCDate() !== day) {
+    throw new Error(`Invalid Report Date "${input}"`);
+  }
+  return key;
+}
+
 function extractParentRows(html) {
   const rows = [];
   const trRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
@@ -47,12 +63,9 @@ async function main() {
 
   const today = rocket.computeTodayRangeBangkok().dateParts;
   const todayKey = `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
-  const dateFrom = process.env.REPORT_DATE_FROM || todayKey;
-  const dateTo = process.env.REPORT_DATE_TO || process.env.REPORT_DATE_FROM || todayKey;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo) ||
-      dateKey(dateFrom) !== dateFrom || dateKey(dateTo) !== dateTo || dateFrom > dateTo) {
-    throw new Error('Report Date range must use YYYY-MM-DD and the start date must be on or before the end date');
-  }
+  const dateFrom = inputDateKey(process.env.REPORT_DATE_FROM, todayKey);
+  const dateTo = inputDateKey(process.env.REPORT_DATE_TO, dateFrom);
+  if (dateFrom > dateTo) throw new Error('Report Date start must be on or before end date');
 
   const auth = await rocket.rocketLogin();
   const toRocketDate = key => key.slice(8, 10) + '/' + key.slice(5, 7) + '/' + key.slice(0, 4);
@@ -84,4 +97,4 @@ if (require.main === module) main().catch(error => {
   process.exit(1);
 });
 
-module.exports = { dateKey, extractParentRows };
+module.exports = { dateKey, inputDateKey, extractParentRows };
