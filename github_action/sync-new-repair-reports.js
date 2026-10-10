@@ -57,6 +57,42 @@ function extractParentRows(html) {
   return rows;
 }
 
+function forceTextIfNumeric(value) {
+  const text = String(value || '').trim();
+  return /^\d+$/.test(text) ? `'${text}` : text;
+}
+
+function shopWork(ticket) {
+  const text = [ticket.branch, ticket.customer, ticket.workDescription,
+    ticket.machineLocation, ticket.problem].join(' ').toLowerCase();
+  return /คลังสินค้า|ตึก\s*75|test\s*kitchen|warehouse|workshop|ศูนย์บริการ/.test(text);
+}
+
+function reportRow(parent, overview, detail, assignment, inspection, customerCode, invoice, now) {
+  const get = (name) => detail[name] || overview[name] || '';
+  const ticket = {
+    branch: get('branch') || parent.branch,
+    customer: get('customer') || parent.customer,
+    workDescription: get('workDescription'),
+    machineLocation: detail.machineLocation || '',
+    problem: get('problem')
+  };
+  return [
+    detail.ticketId || parent.id, detail.ticketNo || parent.ticketNo,
+    parent.reportDate, detail.appointment || '', detail.endTime || '',
+    inspection.status || '', '', parent.statuses[0] || detail.status || '',
+    parent.statuses[1] || '', parent.statuses[2] || '',
+    forceTextIfNumeric(invoice), ticket.customer, ticket.branch,
+    forceTextIfNumeric(detail.customerCode || customerCode), get('contact'),
+    forceTextIfNumeric(get('phone')), ticket.problem,
+    forceTextIfNumeric(get('productCode')), get('productName'),
+    assignment.technicians || detail.technician || '', assignment.team || '',
+    forceTextIfNumeric(get('serial')),
+    detail.url || `${rocket.ROCKET_BASE}/main/ticket_view.php?id=${parent.id}`,
+    now, shopWork(ticket) ? 'Shop work' : 'On-site'
+  ];
+}
+
 async function main() {
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) throw new Error('SPREADSHEET_ID is required');
@@ -74,18 +110,38 @@ async function main() {
     const key = dateKey(ticket.reportDate);
     return key >= dateFrom && key <= dateTo;
   });
-  const now = rocket.formatDateTimeBangkok(new Date());
-  const rows = parents.map(ticket => [
-    ticket.id, ticket.ticketNo, ticket.reportDate, '', '',
-    '', '', ticket.statuses[0] || '', ticket.statuses[1] || '', ticket.statuses[2] || '',
-    '', ticket.customer, ticket.branch, '', '',
-    '', '', '', '', '',
-    '', '', `${rocket.ROCKET_BASE}/main/ticket_view.php?id=${ticket.id}`, now, ''
-  ]);
-
-  if (!rows.length && rocket.extractParentTicketIds(html).length) {
+  if (!parents.length && rocket.extractParentTicketIds(html).length) {
     throw new Error('Rocket returned tickets, but none had a readable Report Date in the requested range');
   }
+
+  const customerCodes = rocket.extractParentToCustomerCodeMap(html);
+  const productIds = rocket.extractParentToProductIdMap(html);
+  const parentData = await rocket.mapConcurrentStrict(parents, 15, async parent => {
+    const [overviewHtml, checkRepairHtml] = await Promise.all([
+      rocket.getOverviewHtml(parent.id, auth),
+      rocket.getCheckRepairHtml(parent.id, auth)
+    ]);
+    const subIds = rocket.extractCheckRepairIds(checkRepairHtml);
+    const assignments = rocket.extractCheckRepairInfo(checkRepairHtml);
+    const details = await rocket.mapConcurrentStrict(subIds, 10, async subId => {
+      const detailHtml = await rocket.getTicketDetailHtml(subId, auth);
+      const detail = rocket.parseTicketDetail(detailHtml, subId);
+      const inspection = rocket.parseInspectorModal(await rocket.getInspectorModalHtml(subId, auth));
+      return { detail, inspection, assignment: assignments[subId] || {} };
+    });
+    let invoice = '';
+    const productId = productIds[parent.id];
+    if (productId) invoice = rocket.parseSalesInvoiceNo(await rocket.getModalProductHtml(productId, auth));
+    return { parent, overview: rocket.parseOverviewHtml(overviewHtml), details, invoice };
+  });
+  const now = rocket.formatDateTimeBangkok(new Date());
+  const rows = parentData.flatMap(({ parent, overview, details, invoice }) => {
+    const records = details.length ? details : [{ detail: {}, inspection: {}, assignment: {} }];
+    return records.map(({ detail, inspection, assignment }) => reportRow(
+      parent, overview, detail, assignment, inspection,
+      customerCodes[parent.id] || '', invoice, now
+    ));
+  });
   const sheets = await sheetsLib.getSheetsClient();
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, TARGET_SHEET);
   await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, TARGET_SHEET, HEADERS, rows);
@@ -97,4 +153,4 @@ if (require.main === module) main().catch(error => {
   process.exit(1);
 });
 
-module.exports = { dateKey, inputDateKey, extractParentRows };
+module.exports = { dateKey, inputDateKey, extractParentRows, reportRow };
