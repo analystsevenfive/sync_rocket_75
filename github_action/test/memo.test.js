@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { memoRange, splitDetails, extractMemoRows } = require('../sync-memo');
+const { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows } = require('../sync-memo');
+
+test('vehicle registration is separated from technician names', () => {
+  assert.deepEqual(splitTechniciansAndPlates('1.ช่างคนแรก\n2.ช่างคนที่สอง\n3ฅย75 - Isuzu 75 ช่าง'),
+    { technicians: '1.ช่างคนแรก\n2.ช่างคนที่สอง', plates: 'ฅย75' });
+  assert.deepEqual(splitTechniciansAndPlates('1.ช่างคนแรก\n2.ช่างคนที่สอง'),
+    { technicians: '1.ช่างคนแรก\n2.ช่างคนที่สอง', plates: '' });
+});
 
 test('Memo range begins on first day of previous Bangkok month', () => {
   assert.deepEqual(memoRange(new Date('2026-10-10T05:00:00Z')),

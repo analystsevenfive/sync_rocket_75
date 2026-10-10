@@ -4,7 +4,7 @@ const sheetsLib = require('./lib/sheets-client');
 const SHEET_NAME = 'Memo';
 const HEADERS = [
   'เนื้อหา', 'รายละเอียด', 'จังหวัด', 'วันที่', 'Count Date',
-  'ผู้ทำรายการ', 'วันที่ทำรายการ', 'เลขที่งาน', 'ช่าง', 'ไฟล์', 'URL', 'Last Sync'
+  'ผู้ทำรายการ', 'วันที่ทำรายการ', 'เลขที่งาน', 'ช่าง', 'ป้ายทะเบียน', 'ไฟล์', 'URL', 'Last Sync'
 ];
 
 const MONTHS = {
@@ -43,6 +43,17 @@ function splitDetails(value) {
   };
   const countDate = valid(start) && valid(end) && end >= start ? end - start + 1 : '';
   return { province, date: dateMatch[0].replace(/^วันที่\s*/, ''), countDate };
+}
+
+function splitTechniciansAndPlates(value) {
+  const technicians = [];
+  const plates = [];
+  for (const line of String(value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean)) {
+    const plate = line.match(/^(?:\d+[.)]?\s*)?(?:ทะเบียน\s*)?([ก-ฮ]{1,3}\s*\d{1,4})(?=\s*[-–]|\s*$)/u);
+    if (plate) plates.push(plate[1].replace(/\s+/g, ''));
+    else technicians.push(line);
+  }
+  return { technicians: technicians.join('\n'), plates: [...new Set(plates)].join('\n') };
 }
 
 function extractMemoRows(html) {
@@ -124,8 +135,10 @@ async function main() {
   const now = rocket.formatDateTimeBangkok(new Date());
   const rows = memos.map(memo => {
     const parsed = splitDetails(memo.detail);
+    const people = splitTechniciansAndPlates(memo.technicians);
     return [memo.subject, memo.detail, parsed.province, parsed.date, parsed.countDate,
-      memo.creator, memo.createdAt, memo.refs, memo.technicians, memo.file, memo.url, now];
+      memo.creator, memo.createdAt, memo.refs, people.technicians, people.plates,
+      memo.file, memo.url, now];
   });
   const sheets = await sheetsLib.getSheetsClient();
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, SHEET_NAME);
@@ -138,4 +151,4 @@ if (require.main === module) main().catch(error => {
   process.exit(1);
 });
 
-module.exports = { memoRange, splitDetails, extractMemoRows, tableFromResponse };
+module.exports = { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows, tableFromResponse };
