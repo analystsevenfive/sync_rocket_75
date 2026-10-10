@@ -1,9 +1,7 @@
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
-const SOURCE_SHEET = 'Tickets';
 const TARGET_SHEET = 'New Repair Reports';
-
 const HEADERS = [
   'Ticket ID', 'Ticket No', 'Report Date', 'Appointment', 'End Time',
   'Inspection Status', 'Active Stage', 'Status 1', 'Status 2', 'Status 3',
@@ -12,108 +10,78 @@ const HEADERS = [
   'Team', 'Serial', 'URL', 'Last Sync', 'Shop / On-site Work'
 ];
 
-function isShopWork(ticket) {
-  const text = [ticket.branch, ticket.customer, ticket.workDescription,
-    ticket.machineLocation, ticket.problem].join(' ').toLowerCase();
-  return /คลังสินค้า|ตึก\s*75|test\s*kitchen|warehouse|workshop|ศูนย์บริการ/.test(text);
+function dateKey(value) {
+  const parts = rocket.parseDateParts(String(value || ''));
+  return parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : '';
 }
 
-function cleanTechnician(value) {
-  const name = String(value || '').trim();
-  return !name || name === '-' || name.toLowerCase() === 'ไม่ระบุ' ? '' : name;
+function extractParentRows(html) {
+  const rows = [];
+  const trRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+  let match;
+  while ((match = trRegex.exec(html)) !== null) {
+    const idMatch = match[1].match(/ticket_view\.php\?id=(\d+)/i);
+    if (!idMatch) continue;
+    const cells = [...match[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1]);
+    if (cells.length < 3) continue;
+    const ticketNo = rocket.cleanText(cells[0]).match(/[A-Z]{2,4}\d{4}-\d+/i)?.[0] || '';
+    const creatorLines = cells[1].split(/<br\s*\/?>/i).map(rocket.cleanText).filter(Boolean);
+    const reportDate = creatorLines.find(line => dateKey(line)) || '';
+    const customerMatch = cells[2].match(/fa-user[^>]*><\/i>([\s\S]*?)<\/label>/i);
+    const branchMatch = cells[2].match(/fa-home[^>]*><\/i>([\s\S]*?)<\/label>/i);
+    const statuses = [...(cells[4] || '').matchAll(/<(?:span|label|div|button|a)\b[^>]*class=["'][^"']*badge[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|label|div|button|a)>/gi)]
+      .map(m => rocket.cleanText(m[1])).filter(Boolean);
+    rows.push({
+      id: idMatch[1], ticketNo, reportDate,
+      customer: customerMatch ? rocket.cleanText(customerMatch[1]).replace(/^\s*:\s*/, '') : '',
+      branch: branchMatch ? rocket.cleanText(branchMatch[1]).replace(/^\s*:\s*/, '') : '',
+      statuses
+    });
+  }
+  return rows;
 }
 
 async function main() {
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) throw new Error('SPREADSHEET_ID is required');
 
-  const auth = await rocket.rocketLogin();
-  const sheets = await sheetsLib.getSheetsClient();
   const today = rocket.computeTodayRangeBangkok().dateParts;
   const todayKey = `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
   const dateFrom = process.env.REPORT_DATE_FROM || todayKey;
   const dateTo = process.env.REPORT_DATE_TO || process.env.REPORT_DATE_FROM || todayKey;
-  const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
-  if (!isoDatePattern.test(dateFrom) || !isoDatePattern.test(dateTo) || dateFrom > dateTo) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo) ||
+      dateKey(dateFrom) !== dateFrom || dateKey(dateTo) !== dateTo || dateFrom > dateTo) {
     throw new Error('Report Date range must use YYYY-MM-DD and the start date must be on or before the end date');
   }
 
-  const source = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `'${SOURCE_SHEET}'!A1:AJ`,
-    valueRenderOption: 'FORMATTED_VALUE'
+  const auth = await rocket.rocketLogin();
+  const toRocketDate = key => key.slice(8, 10) + '/' + key.slice(5, 7) + '/' + key.slice(0, 4);
+  const html = await rocket.getParentTicketHtml(auth, toRocketDate(dateFrom), toRocketDate(dateTo), '1');
+  const parents = extractParentRows(html).filter(ticket => {
+    const key = dateKey(ticket.reportDate);
+    return key >= dateFrom && key <= dateTo;
   });
-  const values = source.data.values || [];
-  const headerRowIndex = values.findIndex(row => row.includes('Ticket ID') && row.includes('Report Date'));
-  if (headerRowIndex < 0) throw new Error(`Could not find the header row in ${SOURCE_SHEET}`);
+  const now = rocket.formatDateTimeBangkok(new Date());
+  const rows = parents.map(ticket => [
+    ticket.id, ticket.ticketNo, ticket.reportDate, '', '',
+    '', '', ticket.statuses[0] || '', ticket.statuses[1] || '', ticket.statuses[2] || '',
+    '', ticket.customer, ticket.branch, '', '',
+    '', '', '', '', '',
+    '', '', `${rocket.ROCKET_BASE}/main/ticket_view.php?id=${ticket.id}`, now, ''
+  ]);
 
-  const header = values[headerRowIndex];
-  const sourceColumns = [
-    'Inspection Status', 'Sales Invoice No.', 'Ticket ID', 'Parent Ticket ID', 'Ticket No',
-    'Status', 'Appointment', 'Report Date', 'Customer', 'Branch', 'Contact',
-    'Phone', 'Problem Reported', 'Work Description', 'Machine Location',
-    'Product Code', 'Product Name', 'Serial', 'End Time', 'Technician',
-    'URL', 'Last Sync'
-  ];
-  const missing = sourceColumns.filter(name => !header.includes(name));
-  if (missing.length) throw new Error(`Source sheet is missing expected headers: ${missing.join(', ')}`);
-  const col = Object.fromEntries(sourceColumns.map(name => [name, header.indexOf(name)]));
-
-  const reportDateKey = value => {
-    const parsed = rocket.parseDateParts(String(value || ''));
-    return parsed
-      ? `${parsed.year}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day).padStart(2, '0')}`
-      : '';
-  };
-
-  const selectedRows = values.slice(headerRowIndex + 1)
-    .filter(row => {
-      const key = reportDateKey(row[col['Report Date']]);
-      return key >= dateFrom && key <= dateTo;
-    });
-
-  // Tickets' Technician field is often "ไม่ระบุ". Match Daily Repair Update
-  // by reading the assigned technicians from each ticket's parent checkrepair table.
-  const parentIds = [...new Set(selectedRows
-    .map(row => row[col['Parent Ticket ID']])
-    .filter(Boolean))];
-  const technicianByKey = {};
-  const checkRepairResults = await rocket.mapConcurrentStrict(
-    parentIds,
-    30,
-    async parentId => rocket.extractCheckRepairInfo(await rocket.getCheckRepairHtml(parentId, auth))
-  );
-  checkRepairResults.forEach(info => Object.assign(technicianByKey, info));
-
-  const rows = selectedRows
-    .sort((a, b) => rocket.parseAppointmentTimestamp(a[col.Appointment]) - rocket.parseAppointmentTimestamp(b[col.Appointment]))
-    .map(row => {
-      const get = name => row[col[name]] || '';
-      const ticketInfo = technicianByKey[get('Ticket ID')] || technicianByKey[get('Ticket No')] || {};
-      const status = get('Status');
-      const item = {
-        branch: get('Branch'), customer: get('Customer'),
-        problem: get('Problem Reported'),
-        workDescription: get('Work Description'),
-        machineLocation: get('Machine Location')
-      };
-      return [
-        get('Ticket ID'), get('Ticket No'), get('Report Date'), get('Appointment'),
-        get('End Time'), get('Inspection Status'), '', status, '', '',
-        get('Sales Invoice No.'), get('Customer'), get('Branch'), '',
-        get('Contact'), get('Phone'), get('Problem Reported'), get('Product Code'),
-        get('Product Name'), ticketInfo.technicians || cleanTechnician(get('Technician')) || 'ไม่ระบุ',
-        ticketInfo.team || '', get('Serial'), get('URL'),
-        get('Last Sync'), isShopWork(item) ? 'Shop work' : 'On-site'
-      ];
-    });
-
+  if (!rows.length && rocket.extractParentTicketIds(html).length) {
+    throw new Error('Rocket returned tickets, but none had a readable Report Date in the requested range');
+  }
+  const sheets = await sheetsLib.getSheetsClient();
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, TARGET_SHEET);
   await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, TARGET_SHEET, HEADERS, rows);
-  console.log(`Updated ${TARGET_SHEET} from ${SOURCE_SHEET} Report Date for ${dateFrom} to ${dateTo}: ${rows.length} rows`);
+  console.log(`Updated ${TARGET_SHEET} from Rocket Report Date for ${dateFrom} to ${dateTo}: ${rows.length} rows`);
 }
 
-main().catch(error => {
+if (require.main === module) main().catch(error => {
   console.error('New repair report sync failed:', error);
   process.exit(1);
 });
+
+module.exports = { dateKey, extractParentRows };
