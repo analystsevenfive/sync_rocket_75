@@ -863,7 +863,6 @@ function parseTicketDetail(html, ticketId) {
     appointment: cleanText(appointment),
 
     reportDate: getDtValue(html, 'วันที่แจ้ง'),
-    workOrderSentDate: getDtValue(html, 'วันที่ส่งใบงาน'),
     customer: getDtValue(html, 'ลูกค้า'),
     branch: getDtValue(html, 'สาขา'),
     customerCode: getDtValue(html, 'รหัสลูกค้า') || '',
