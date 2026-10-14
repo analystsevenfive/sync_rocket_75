@@ -393,6 +393,38 @@ function isMatchingDateParts(dateStr, targetParts) {
 
 }
 
+function appointmentDateKey(parts) {
+  return parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : '';
+}
+
+function resolveAppointmentRange(defaultRange, fromInput, toInput) {
+  function parseInput(value, fallback) {
+    const input = String(value || '').trim();
+    if (!input) return fallback;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
+    if (!match) throw new Error(`Invalid appointment date "${input}"; use YYYY-MM-DD`);
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const actual = new Date(Date.UTC(year, month - 1, day));
+    if (actual.getUTCFullYear() !== year || actual.getUTCMonth() + 1 !== month || actual.getUTCDate() !== day) {
+      throw new Error(`Invalid appointment date "${input}"`);
+    }
+    return input;
+  }
+
+  const fromKey = parseInput(fromInput, appointmentDateKey(defaultRange.dateParts));
+  const toKey = parseInput(toInput, fromKey);
+  if (fromKey > toKey) throw new Error('Appointment date from must be on or before date to');
+  const toRocketDate = key => `${key.slice(8, 10)}/${key.slice(5, 7)}/${key.slice(0, 4)}`;
+  return { start: toRocketDate(fromKey), end: toRocketDate(toKey), fromKey, toKey };
+}
+
+function isDateInAppointmentRange(dateStr, range) {
+  const key = appointmentDateKey(parseDateParts(dateStr));
+  return !!key && key >= range.fromKey && key <= range.toKey;
+}
+
 
 
 // แปลง appointment string เช่น "04 Sep 2026 08:00" เป็น timestamp เพื่อใช้จัดเรียงตามเวลาจากเช้าไปเย็น
@@ -1341,6 +1373,8 @@ module.exports = {
   computeYesterdayRangeBangkok,
   parseDateParts,
   isMatchingDateParts,
+  resolveAppointmentRange,
+  isDateInAppointmentRange,
   parseAppointmentTimestamp,
   formatDateTimeBangkok,
   parseDateTimeBangkok,

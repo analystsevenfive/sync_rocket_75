@@ -156,8 +156,10 @@ async function main() {
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
 
-  const range = rocket.computeTodayRangeBangkok();
-  console.log('วันที่นัดหมาย (วันนี้): ' + range.start);
+  const range = rocket.resolveAppointmentRange(
+    rocket.computeTodayRangeBangkok(), process.env.APPOINTMENT_DATE_FROM, process.env.APPOINTMENT_DATE_TO
+  );
+  console.log('ช่วงวันที่นัดหมาย: ' + range.start + ' - ' + range.end);
 
   // ==========================================
   // 1. PARENT TICKETS ที่มีนัดหมายวันนี้ (date_type=2)
@@ -228,7 +230,7 @@ async function main() {
       if (r && r.__error) {
         console.log('ERROR SubTicket ' + candidateSubIds[i] + ': ' + r.__error);
       } else if (r) {
-        if (rocket.isMatchingDateParts(r.appointment, range.dateParts)) {
+        if (rocket.isDateInAppointmentRange(r.appointment, range)) {
           matchingAppointmentCount++;
           const ticketNo = r.ticketNo || r.parentTicketNo || '';
           if (!rocket.isBkTicket(ticketNo)) {

@@ -2,6 +2,15 @@ name: Sync Tomorrow Technician Plan
 
 on:
   workflow_dispatch:
+    inputs:
+      appointment_date_from:
+        description: 'Appointment from (YYYY-MM-DD; blank = tomorrow in Bangkok)'
+        required: false
+        type: string
+      appointment_date_to:
+        description: 'Appointment to (YYYY-MM-DD; blank = same as from)'
+        required: false
+        type: string
   # schedule:
   #   # 19:05 เวลาไทย (UTC+7) = 12:05 UTC — ย้ายไปใช้ cron-job.org แล้ว
   #   - cron: '5 12 * * *'
@@ -32,4 +41,6 @@ jobs:
           ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          APPOINTMENT_DATE_FROM: ${{ inputs.appointment_date_from }}
+          APPOINTMENT_DATE_TO: ${{ inputs.appointment_date_to }}
         run: node sync-tomorrow-plan.js
