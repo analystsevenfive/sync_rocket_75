@@ -13,6 +13,7 @@
 
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
+const workOrderReport = require('./lib/work-order-report');
 
 const SHEET_NAME = 'Daily Repair Update';
 const DATE_TYPE_APPOINTMENT = '2';
@@ -261,6 +262,17 @@ async function main() {
                      parentToCustomerCodeMap[parentNo] ||
                      '';
   });
+
+  if (todayTickets.length > 0) {
+    const sentByTicket = await workOrderReport.getWorkOrderSentReport(auth, range.start, range.end);
+    if (sentByTicket.size === 0) throw new Error('Work order report returned no tickets; keeping previous sheet data');
+    const matched = todayTickets.filter(t => sentByTicket.has(String(t.ticketNo || '').trim().toUpperCase())).length;
+    if (matched === 0) throw new Error('Work order report matched no tickets; keeping previous sheet data');
+    todayTickets.forEach(function(t) {
+      t.workOrderSentDate = sentByTicket.get(String(t.ticketNo || '').trim().toUpperCase()) || '';
+    });
+    console.log('Work order report matched ' + matched + '/' + todayTickets.length + ' tickets; sent: ' + todayTickets.filter(t => t.workOrderSentDate).length);
+  }
 
   // ==========================================
   // 4. FETCH INSPECTION STATUS, ACTIVE STAGE & SALES INVOICE (ดูการตรวจงาน, Active Stage & เลขที่บิลขาย)

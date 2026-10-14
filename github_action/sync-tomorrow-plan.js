@@ -21,6 +21,7 @@
 
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
+const workOrderReport = require('./lib/work-order-report');
 
 const PLAN_SHEET_NAME = 'Tomorrow Technician Plan';
 const DATE_TYPE_APPOINTMENT = '2';
@@ -200,6 +201,17 @@ async function main() {
                      parentToCustomerCodeMap[parentNo] ||
                      '';
   });
+
+  if (tomorrowTickets.length > 0) {
+    const sentByTicket = await workOrderReport.getWorkOrderSentReport(auth, range.start, range.end);
+    if (sentByTicket.size === 0) throw new Error('Work order report returned no tickets; keeping previous sheet data');
+    const matched = tomorrowTickets.filter(t => sentByTicket.has(String(t.ticketNo || '').trim().toUpperCase())).length;
+    if (matched === 0) throw new Error('Work order report matched no tickets; keeping previous sheet data');
+    tomorrowTickets.forEach(function(t) {
+      t.workOrderSentDate = sentByTicket.get(String(t.ticketNo || '').trim().toUpperCase()) || '';
+    });
+    console.log('Work order report matched ' + matched + '/' + tomorrowTickets.length + ' tickets; sent: ' + tomorrowTickets.filter(t => t.workOrderSentDate).length);
+  }
 
   // ==========================================
   // 4. FETCH INSPECTION STATUS & ACTIVE STAGE (ดูการตรวจงาน & Active Stage)
