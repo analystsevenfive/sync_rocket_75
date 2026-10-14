@@ -32,7 +32,6 @@ const PLAN_HEADERS = [
   'Ticket ID',
   'Ticket No',
   'Report Date',
-  'Work Order Sent Date',
   'Appointment',
   'End Time',
   'Inspection Status',
@@ -49,7 +48,8 @@ const PLAN_HEADERS = [
   'Team',
   'Serial',
   'URL',
-  'Last Sync'
+  'Last Sync',
+  'Work Order Sent Date'
 ];
 
 
@@ -67,7 +67,6 @@ function planToRow(d, lastSync) {
     d.ticketId,
     d.ticketNo,
     d.reportDate || '',
-    d.workOrderSentDate || '',
     d.appointment,
     d.endTime || '',
     d.inspectionStatus || '',
@@ -84,7 +83,8 @@ function planToRow(d, lastSync) {
     d.team || '',
     forceTextIfNumeric(d.serial),
     d.url,
-    lastSync
+    lastSync,
+    d.workOrderSentDate || ''
   ];
 }
 
