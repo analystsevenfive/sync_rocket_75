@@ -401,16 +401,16 @@ function resolveAppointmentRange(defaultRange, fromInput, toInput) {
   function parseInput(value, fallback) {
     const input = String(value || '').trim();
     if (!input) return fallback;
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
-    if (!match) throw new Error(`Invalid appointment date "${input}"; use YYYY-MM-DD`);
+    const match = /^(\d{4})([-/])(\d{2})\2(\d{2})$/.exec(input);
+    if (!match) throw new Error(`Invalid appointment date "${input}"; use YYYY-MM-DD or YYYY/MM/DD`);
     const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
+    const month = Number(match[3]);
+    const day = Number(match[4]);
     const actual = new Date(Date.UTC(year, month - 1, day));
     if (actual.getUTCFullYear() !== year || actual.getUTCMonth() + 1 !== month || actual.getUTCDate() !== day) {
       throw new Error(`Invalid appointment date "${input}"`);
     }
-    return input;
+    return `${match[1]}-${match[3]}-${match[4]}`;
   }
 
   const fromKey = parseInput(fromInput, appointmentDateKey(defaultRange.dateParts));

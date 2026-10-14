@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       appointment_date_from:
-        description: 'Appointment from (YYYY-MM-DD; blank = tomorrow in Bangkok)'
+        description: 'Appointment from (YYYY-MM-DD or YYYY/MM/DD; blank = tomorrow in Bangkok)'
         required: false
         type: string
       appointment_date_to:
-        description: 'Appointment to (YYYY-MM-DD; blank = same as from)'
+        description: 'Appointment to (YYYY-MM-DD or YYYY/MM/DD; blank = same as from)'
         required: false
         type: string
   # schedule:

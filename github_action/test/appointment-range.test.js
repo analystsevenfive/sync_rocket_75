@@ -14,6 +14,10 @@ test('manual appointment range includes both endpoints and keeps the default day
   assert.equal(rocket.isDateInAppointmentRange('12 Oct 2026 08:00', range), true);
   assert.equal(rocket.isDateInAppointmentRange('14 Oct 2026 17:00', range), true);
   assert.equal(rocket.isDateInAppointmentRange('15 Oct 2026 08:00', range), false);
+  const slashRange = rocket.resolveAppointmentRange(defaultRange, '2026/10/13', '2026/10/14');
+  assert.equal(slashRange.start, '13/10/2026');
+  assert.equal(slashRange.end, '14/10/2026');
+  assert.equal(rocket.isDateInAppointmentRange('13 Oct 2026 08:00', slashRange), true);
 });
 
 test('manual appointment range rejects invalid or reversed dates', () => {
