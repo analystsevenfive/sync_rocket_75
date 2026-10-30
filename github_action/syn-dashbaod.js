@@ -16,6 +16,10 @@ const DASHBOARD_SHEET_NAME = 'Dashboard';
 const START_DATE = '01/01/2025';
 const BRANCH_NAME = 'กรุงเทพ';
 
+// export ช่วงยาวรวดเดียว (~2 ปี) เกิน 5 นาที timeout —
+// แบ่งยิงทีละเดือนแทน แล้วค่อยรวมแถว
+const MONTH_CONCURRENCY = 3;
+
 // ชื่อคอลัมน์ตรงกับ header ใน xlsx ที่ export มา
 const DASHBOARD_HEADERS = [
   'ประเภทงาน', 'วันที่แจ้งซ่อม', 'Ticket', 'ชื่อลูกค้า', 'สาขาลูกค้า',
@@ -91,6 +95,30 @@ async function getOverallReport(auth, startDate, endDate, areaValue) {
 
 
 
+// แบ่ง dd/mm/yyyy start-end เป็นช่วงรายเดือนปฏิทิน (ไม่ซ้อนกัน)
+function splitIntoMonths(startDate, endDate) {
+  const toParts = s => s.split('/').map(Number);
+  const fmt = (y, m, d) => String(d).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + y;
+  const [sd, sm, sy] = toParts(startDate);
+  const [ed, em, ey] = toParts(endDate);
+
+  const chunks = [];
+  let y = sy;
+  let m = sm;
+  let d = sd;
+  while (y < ey || (y === ey && m <= em)) {
+    const isLast = y === ey && m === em;
+    const lastDay = isLast ? ed : new Date(Date.UTC(y, m, 0)).getUTCDate();
+    chunks.push({ start: fmt(y, m, d), end: fmt(y, m, lastDay) });
+    m++;
+    if (m > 12) { m = 1; y++; }
+    d = 1;
+  }
+  return chunks;
+}
+
+
+
 function extractDashboardRows(buffer) {
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -98,7 +126,11 @@ function extractDashboardRows(buffer) {
 
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
   const headerIndex = rows.findIndex(row => row.some(cell => String(cell).trim() === 'Ticket'));
-  if (headerIndex < 0) throw new Error('Overall report ไม่มี header "Ticket"');
+  if (headerIndex < 0) {
+    // เดือนที่ไม่มีงานเลยอาจได้ไฟล์เปล่า — มีข้อมูลแต่ไม่มี header ถึงจะถือว่าผิดปกติ
+    if (rows.filter(row => row.some(cell => String(cell).trim())).length <= 1) return [];
+    throw new Error('Overall report ไม่มี header "Ticket"');
+  }
 
   const header = rows[headerIndex].map(cell => String(cell).trim());
   const columns = DASHBOARD_HEADERS.map(function(name) {
@@ -128,8 +160,16 @@ async function main() {
   const areaValue = await resolveBranchValue(auth);
   console.log('สาขา ' + BRANCH_NAME + ' = ' + areaValue);
 
-  const buffer = await getOverallReport(auth, START_DATE, endDate, areaValue);
-  const rows = extractDashboardRows(buffer);
+  const months = splitIntoMonths(START_DATE, endDate);
+  console.log('แบ่งเป็น ' + months.length + ' เดือน');
+
+  const monthRows = await rocket.mapConcurrentStrict(months, MONTH_CONCURRENCY, async function(month) {
+    const buffer = await getOverallReport(auth, month.start, month.end, areaValue);
+    const rows = extractDashboardRows(buffer);
+    console.log('  ' + month.start + ' - ' + month.end + ': ' + rows.length + ' แถว');
+    return rows;
+  });
+  const rows = [].concat(...monthRows);
   console.log('ROWS: ' + rows.length);
 
   if (rows.length === 0) {
