@@ -732,6 +732,16 @@ async function clearAndWriteGasolineRows(sheets, spreadsheetId, sheetId, sheetNa
     }
   });
 
+  // URL -> Ticket No เจ้าของจากชีท Tickets (เฉพาะซับทิกเก็ต ไม่นับ entry ของ Parent)
+  // ใช้ตรวจ URL เดิมในชีทว่าเป็นของตั๋วใบอื่นหรือไม่ เช่น .R02 ถือลิงก์ของ .R01
+  // ซึ่งตรวจซ้ำภายในชีท Gasoline Detail ไม่เจอ ถ้า .R01 ไม่ได้อยู่ในชีทนี้
+  const urlOwnerMap = {};
+  Object.keys(urlMap).forEach(function(no) {
+    if (/\.[A-Z0-9]+$/i.test(no) && urlMap[no] && !urlOwnerMap[urlMap[no]]) {
+      urlOwnerMap[urlMap[no]] = no;
+    }
+  });
+
   const targetRowCount = uniqueRows.size + 2;
   await ensureGridSize(sheets, spreadsheetId, sheetId, targetRowCount);
 
@@ -777,9 +787,12 @@ async function clearAndWriteGasolineRows(sheets, spreadsheetId, sheetId, sheetNa
     // ต้องตรงกับ Ticket No เท่านั้น — ห้าม fallback ไป Parent Ticket เพราะ urlMap[parent]
     // คือ URL ของซับทิกเก็ตใบแรก (เช่น .R01) ทำให้ .R02 ได้ลิงก์ของ .R01
     // ถ้าไม่เจอให้เว้นว่างไว้ แล้ว backfillMissingDataFromRocket จะไปหาซับทิกเก็ตที่ถูกต้องเอง
-    const url = urlMap[ticketKey] ||
-      (ctx.existingUrls && ctx.existingUrls[ticketKey]) ||
-      '';
+    let existingUrl = (ctx.existingUrls && ctx.existingUrls[ticketKey]) || '';
+    if (existingUrl && urlOwnerMap[existingUrl] && urlOwnerMap[existingUrl] !== ticketKey) {
+      console.log('URL เดิมของ ' + ticketKey + ' เป็นของ ' + urlOwnerMap[existingUrl] + ' -> ล้างเพื่อดึงใหม่');
+      existingUrl = '';
+    }
+    const url = urlMap[ticketKey] || existingUrl || '';
 
     // Review (Col L) และ Note (Col M):
     const compKey = ticketKey + '__' + techKey;

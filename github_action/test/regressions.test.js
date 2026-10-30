@@ -948,3 +948,25 @@ test('gasoline drops existing URLs shared by sibling sub-tickets so they are re-
   assert.equal(ctx.existingUrls['BKRM0926-000699.R02'], undefined);
   assert.equal(ctx.existingUrls['BKRM1026-000442.R02'], ownUrl);
 });
+
+test('gasoline drops an existing URL that the Tickets sheet assigns to a different sub-ticket', async () => {
+  const script = loadScript('sync-gasoline.js');
+  const { sheets, state } = fakeSheets();
+  sheets.spreadsheets.values.clear = async () => { state.values = []; };
+  const r01Url = 'https://rocket75.com/main/ticket_checkrepair_view.php?id=4239615153';
+  const ctx = {
+    existingReviews: {}, existingNotes: {}, existingAllTechs: {},
+    existingUrls: { 'BKRM0926-000699.R02': r01Url, 'BKRM1026-000442.R03': 'https://rocket75.com/x?id=9' },
+    existingArrivedDates: {}, lastRow: 2
+  };
+  const urlMap = { 'BKRM0926-000699.R01': r01Url, 'BKRM0926-000699': r01Url };
+  const rows = [
+    { ticketNo: 'BKRM0926-000699.R02', technician: 'A', counted: 1, arrivedDate: '28/10/2026', jobNo: '', customer: 'C', team: 'B', remarks: '' },
+    { ticketNo: 'BKRM1026-000442.R03', technician: 'A', counted: 1, arrivedDate: '28/10/2026', jobNo: '', customer: 'C', team: 'B', remarks: '' }
+  ];
+
+  await script.clearAndWriteGasolineRows(sheets, 'test', 0, 'Gasoline Detail', rows, ctx, urlMap, {}, 'now');
+
+  assert.equal(state.writes[0].values[0][10], '');
+  assert.equal(state.writes[0].values[1][10], 'https://rocket75.com/x?id=9');
+});
