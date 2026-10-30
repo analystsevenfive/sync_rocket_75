@@ -31,7 +31,8 @@ const TICKETS_SHEET_NAME = 'Tickets';
 const GASOLINE_SHEET_NAME = 'Gasoline Detail';
 const RATE_PER_JOB = 80;
 
-// ช่วงวันที่เริ่มต้น: ดึงตั้งแต่วันที่ 16 ของ 2 เดือนที่แล้วเสมอ (16/MM/YYYY) ถึงวันนี้ (ตามเวลากรุงเทพ)
+// ช่วงวันที่เริ่มต้น: ขยับวันเริ่มทุกวันที่ 16 ของเดือน ตามเวลากรุงเทพ
+// ก่อนวันที่ 16 ให้คงวันเริ่มเดิมไว้ แล้วดึงข้อมูลถึงวันนี้
 // เพื่อให้ข้อมูลย้อนหลังครอบคลุมและอัปเดตสถานะและ Timestamp ในชีททุกรอบ (Sync Gasoline Detail)
 // รองรับ override ผ่าน environment variables (GASOLINE_START_DATE, GASOLINE_END_DATE) สำหรับยิงย้อนหลัง
 function computeDateRange(startOverride, endOverride, baseDate = new Date()) {
@@ -56,10 +57,10 @@ function computeDateRange(startOverride, endOverride, baseDate = new Date()) {
   let start = (startOverride || '').trim();
   let end = (endOverride || '').trim();
 
-  // ถ้าไม่ระบุ start_date -> ใช้วันที่ 16 ของ 2 เดือนก่อนหน้าเสมอ (ย้อนหลังเพิ่ม 1 เดือน เริ่มวันที่ 16: ตามเวลากรุงเทพ)
+  // ถ้าไม่ระบุ start_date -> ก่อนวันที่ 16 คงช่วงเดิมไว้; วันที่ 16 เป็นต้นไปขยับวันเริ่มไปข้างหน้าหนึ่งเดือน
   if (!start) {
     let startYear = now.year;
-    let startMonth = now.month - 2;
+    let startMonth = now.month - (now.day < 16 ? 3 : 2);
     while (startMonth < 1) {
       startMonth += 12;
       startYear -= 1;
@@ -529,26 +530,27 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
 
   const ticketRows = valuesRes.data.values || [];
 
-  // ตรวจจับ URL ที่ซ้ำข้าม Parent Ticket คนละเลข (เกิดจากบั๊กที่เคย fallback ด้วย "ใบงานเปล่า")
-  // ซับทิกเก็ตใน Rocket จะมี ID เฉพาะตัว และต้องอยู่ใต้ Parent Ticket เดียวกันเสมอ
-  const urlToParentMap = {};
-  const crossParentDuplicateUrls = new Set();
+  // ตรวจจับ URL ที่ซ้ำข้าม Ticket No คนละเลข (เกิดจากบั๊กที่เคย fallback ด้วย "ใบงานเปล่า"
+  // หรือ fallback ไป URL ของ Parent Ticket ซึ่งเป็นลิงก์ของซับทิกเก็ตพี่น้อง เช่น .R02 ได้ลิงก์ของ .R01)
+  // ซับทิกเก็ตใน Rocket มี ID เฉพาะตัว จึงไม่ควรมี 2 Ticket No ใช้ URL เดียวกัน
+  // ไม่รู้ว่าแถวไหนถูก จึงล้างทุกแถวที่ซ้ำ แล้วให้ urlMap / Rocket หาใหม่
+  const urlToTicketMap = {};
+  const crossTicketDuplicateUrls = new Set();
 
   ticketRows.forEach(function(row) {
     const ticketNo = String(row[2] || '').trim();
     const existingUrl = String(row[10] || '').trim();
     if (ticketNo && existingUrl) {
-      const parentNo = ticketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
-      if (!urlToParentMap[existingUrl]) {
-        urlToParentMap[existingUrl] = parentNo;
-      } else if (urlToParentMap[existingUrl] !== parentNo) {
-        crossParentDuplicateUrls.add(existingUrl);
+      if (!urlToTicketMap[existingUrl]) {
+        urlToTicketMap[existingUrl] = ticketNo;
+      } else if (urlToTicketMap[existingUrl] !== ticketNo) {
+        crossTicketDuplicateUrls.add(existingUrl);
       }
     }
   });
 
-  if (crossParentDuplicateUrls.size > 0) {
-    console.log('พบ URL ที่ซ้ำข้ามตั๋วคนละใบ ' + crossParentDuplicateUrls.size + ' รายการ — จะล้าง URL ที่ผิดเพื่อดึงใหม่จาก Rocket');
+  if (crossTicketDuplicateUrls.size > 0) {
+    console.log('พบ URL ที่ซ้ำข้ามตั๋วคนละใบ ' + crossTicketDuplicateUrls.size + ' รายการ — จะล้าง URL ที่ผิดเพื่อดึงใหม่จาก Rocket');
   }
 
   const index = {};
@@ -595,9 +597,8 @@ async function buildRowIndex(sheets, spreadsheetId, sheetName, sheetId, range, t
       }
 
       if (existingUrl) {
-        const parentNo = ticketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
-        // ถ้า URL นี้ซ้ำข้าม Parent Ticket และไม่ใช่ Parent Ticket แรกที่ตรงกับ URL ให้ถือว่าเพี้ยนและไม่เก็บ
-        if (crossParentDuplicateUrls.has(existingUrl) && urlToParentMap[existingUrl] !== parentNo) {
+        // ถ้า URL นี้ซ้ำข้าม Ticket No คนละเลข ให้ถือว่าเพี้ยนและไม่เก็บ
+        if (crossTicketDuplicateUrls.has(existingUrl)) {
           console.log('ตรวจพบ URL เพี้ยนในแถว ' + rowNum + ' (' + ticketNo + ') -> ล้าง URL เพื่อดึงใหม่');
         } else {
           existingUrls[ticketNo] = existingUrl;
@@ -773,10 +774,11 @@ async function clearAndWriteGasolineRows(sheets, spreadsheetId, sheetId, sheetNa
       '';
 
     // URL (Col K):
+    // ต้องตรงกับ Ticket No เท่านั้น — ห้าม fallback ไป Parent Ticket เพราะ urlMap[parent]
+    // คือ URL ของซับทิกเก็ตใบแรก (เช่น .R01) ทำให้ .R02 ได้ลิงก์ของ .R01
+    // ถ้าไม่เจอให้เว้นว่างไว้ แล้ว backfillMissingDataFromRocket จะไปหาซับทิกเก็ตที่ถูกต้องเอง
     const url = urlMap[ticketKey] ||
-      (parentKey && urlMap[parentKey]) ||
       (ctx.existingUrls && ctx.existingUrls[ticketKey]) ||
-      (parentKey && ctx.existingUrls && ctx.existingUrls[parentKey]) ||
       '';
 
     // Review (Col L) และ Note (Col M):
@@ -1042,7 +1044,7 @@ async function fetchTicketInfoFromRocket(auth, ticketNo, jobNo, arrivedDate) {
       matchedSubId = checkRepairInfo[cleanTicketNo].subId;
     }
 
-    if (!matchedSubId && subIds.length > 1) {
+    if (!matchedSubId && subIds.length > 0) {
       const trRegex = /<tr\s+id=["']tr_(\d+)["'][^>]*>([\s\S]*?)<\/tr>/gi;
       let trMatch;
       while ((trMatch = trRegex.exec(checkRepairHtml)) !== null) {
@@ -1058,11 +1060,7 @@ async function fetchTicketInfoFromRocket(auth, ticketNo, jobNo, arrivedDate) {
       }
     }
 
-    if (!matchedSubId && subIds.length === 1) {
-      matchedSubId = subIds[0];
-    }
-
-    if (!matchedSubId && subIds.length > 1) {
+    if (!matchedSubId && subIds.length > 0) {
       for (const sId of subIds) {
         try {
           const detailHtml = await rocket.getTicketDetailHtml(sId, auth);
@@ -1075,10 +1073,8 @@ async function fetchTicketInfoFromRocket(auth, ticketNo, jobNo, arrivedDate) {
       }
     }
 
-    if (!matchedSubId && subIds.length > 0) {
-      matchedSubId = subIds[0];
-    }
-
+    // ไม่เดาด้วย subIds[0] — ถ้าหาซับทิกเก็ตที่ตรงเลขไม่เจอ ให้ลิงก์ไปหน้า Parent Ticket แทน
+    // (เดิมเดาซับใบแรก ทำให้ .R02 ได้ลิงก์ของ .R01)
     let foundUrl = '';
     if (matchedSubId) {
       foundUrl = `${rocket.ROCKET_BASE}/main/ticket_checkrepair_view.php?id=${matchedSubId}`;
@@ -1168,15 +1164,17 @@ async function backfillMissingDataFromRocket(sheets, spreadsheetId, sheetName, a
       const parentNo = item.ticketNo.replace(/\.[A-Z0-9]+$/i, '').trim();
 
       let foundTechs = item.needTechs ? (techMap[item.ticketNo] || (parentNo ? techMap[parentNo] : '')) : '';
-      let foundUrl = item.needUrl ? (urlMap[item.ticketNo] || (parentNo ? urlMap[parentNo] : '')) : '';
+      // URL ต้องตรงกับ Ticket No เท่านั้น ห้ามใช้ของ Parent (จะได้ลิงก์ซับทิกเก็ตพี่น้อง)
+      let foundUrl = item.needUrl ? (urlMap[item.ticketNo] || '') : '';
 
-      // ตรวจแคชรอบนี้ (เฉพาะ ticketNo หรือ parentNo)
+      // ตรวจแคชรอบนี้: URL ใช้ได้เฉพาะแคชของ ticketNo เดียวกัน, ช่างใช้แคชของ parentNo ได้
       if ((item.needTechs && !foundTechs) || (item.needUrl && !foundUrl)) {
-        const cached = rocketInfoCache[item.ticketNo] || (parentNo ? rocketInfoCache[parentNo] : null);
-        if (cached) {
-          if (item.needTechs && !foundTechs && cached.technicians) foundTechs = cached.technicians;
-          if (item.needUrl && !foundUrl && cached.url) foundUrl = cached.url;
+        const cached = rocketInfoCache[item.ticketNo];
+        const parentCached = parentNo ? rocketInfoCache[parentNo] : null;
+        if (item.needTechs && !foundTechs) {
+          foundTechs = (cached && cached.technicians) || (parentCached && parentCached.technicians) || '';
         }
+        if (item.needUrl && !foundUrl && cached && cached.url) foundUrl = cached.url;
       }
 
       // ถ้ายังขาด ให้ยิง Rocket ด้วย item.ticketNo
@@ -1184,7 +1182,7 @@ async function backfillMissingDataFromRocket(sheets, spreadsheetId, sheetName, a
         const info = await fetchTicketInfoFromRocket(auth, item.ticketNo, item.jobNo, item.arrivedDate);
         if (info) {
           rocketInfoCache[item.ticketNo] = info;
-          if (parentNo) rocketInfoCache[parentNo] = info;
+          if (parentNo && !rocketInfoCache[parentNo]) rocketInfoCache[parentNo] = { url: '', technicians: info.technicians };
           if (item.needTechs && !foundTechs && info.technicians) foundTechs = info.technicians;
           if (item.needUrl && !foundUrl && info.url) foundUrl = info.url;
         }

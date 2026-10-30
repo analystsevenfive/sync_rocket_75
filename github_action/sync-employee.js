@@ -304,7 +304,7 @@ function extractEmployeesFromHtml(html, context) {
 /**
  * ดึงหน้าหลัก /hr/organization_chart.php
  */
-async function fetchOrgChartPage(auth) {
+async function fetchOrgChartPage(auth, companyId) {
   const headers = {
     Referer: ROCKET_BASE + '/main/',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
@@ -313,10 +313,9 @@ async function fetchOrgChartPage(auth) {
     headers.Cookie = auth.cookie;
   }
 
-  const res = await rocket.fetchWithTimeout(ROCKET_BASE + '/hr/organization_chart.php', {
-    method: 'GET',
-    headers: headers
-  });
+  const pageUrl = new URL(ROCKET_BASE + '/hr/organization_chart.php');
+  if (companyId) pageUrl.searchParams.set('company_id', String(companyId));
+  const res = await rocket.fetchWithTimeout(pageUrl.toString(), { method: 'GET', headers: headers });
 
   if (res.status !== 200) {
     throw new Error('organization_chart.php HTTP ' + res.status);
@@ -325,10 +324,28 @@ async function fetchOrgChartPage(auth) {
   return res.text();
 }
 
+function extractCompanyOptions(html) {
+  const selects = String(html || '').match(/<select\b[^>]*>[\s\S]*?<\/select>/gi) || [];
+  for (const select of selects) {
+    const options = [];
+    const optionRegex = /<option([^>]*)value=["']([^"']+)["'][^>]*>([\s\S]*?)<\/option>/gi;
+    let match;
+    while ((match = optionRegex.exec(select)) !== null) {
+      const id = String(match[2]).trim();
+      const label = cleanText(match[3]).trim();
+      if (id && id !== '0' && id !== 'x' && /^[A-Z0-9]{2,4}\s*-\s*/i.test(label)) {
+        options.push({ id: id, label: label });
+      }
+    }
+    if (options.length >= 2) return options;
+  }
+  return [];
+}
+
 /**
  * ดึงข้อมูลจาก AJAX Table.php (ถ้ามี)
  */
-async function fetchOrgChartTableAjax(auth, departmentId) {
+async function fetchOrgChartTableAjax(auth, departmentId, companyId) {
   const headers = {
     Origin: ROCKET_BASE,
     Referer: ROCKET_BASE + '/hr/organization_chart.php',
@@ -341,6 +358,12 @@ async function fetchOrgChartTableAjax(auth, departmentId) {
   const body = new URLSearchParams();
   body.set('token', auth.token);
   body.set('key', auth.key);
+  if (companyId) {
+    body.set('company_id', String(companyId));
+    body.set('hr_company_id', String(companyId));
+    body.set('search_company', String(companyId));
+    body.set('company', String(companyId));
+  }
   if (departmentId !== undefined && departmentId !== '') {
     body.set('department_id', String(departmentId));
     body.set('hr_department_id', String(departmentId));
@@ -355,7 +378,7 @@ async function fetchOrgChartTableAjax(auth, departmentId) {
   // The optional all-department endpoint may not exist. Once a department was
   // discovered, its fetch must succeed before replacing the directory.
   if (!departmentId && (res.status === 404 || res.status === 405)) return '';
-  throw new Error('Organization chart department ' + (departmentId || 'all') + ' HTTP ' + res.status);
+  throw new Error('Organization chart company ' + (companyId || 'all') + ', department ' + (departmentId || 'all') + ' HTTP ' + res.status);
 
 }
 
@@ -509,41 +532,14 @@ function extractSelectedOptionText(html, selectNames) {
 }
 
 function extractCompanySelection(html) {
-  const companyNames = [
+  const direct = extractSelectedOption(html, [
     'company', 'company_id', 'hr_company', 'hr_company_id',
     'search_company', 'search_hr_company'
-  ];
-  const companyNamePattern = /(?:name|id)=["']?(?:company|company_id|hr_company|hr_company_id|search_company|search_hr_company)["']?/i;
-  const namedSelectRegex = /<select[^>]*>([\s\S]*?)<\/select>/gi;
-  const namedCompanyOptions = [];
-  let namedSelect;
-  while ((namedSelect = namedSelectRegex.exec(String(html || ''))) !== null) {
-    const openingTag = namedSelect[0].slice(0, namedSelect[0].indexOf('>') + 1);
-    if (!companyNamePattern.test(openingTag)) continue;
-    const selectOptions = [];
-    const optionRegex = /<option([^>]*)value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/gi;
-    let optionMatch;
-    while ((optionMatch = optionRegex.exec(namedSelect[1])) !== null) {
-      const value = String(optionMatch[2] || '').trim();
-      const label = cleanText(optionMatch[3] || '');
-      if (!value || value === '0' || value === 'x' || !label) continue;
-      const option = { value: value, label: label };
-      selectOptions.push({ option: option, selected: /\bselected\b/i.test(optionMatch[1] || '') });
-    }
-    namedCompanyOptions.push(selectOptions);
-  }
-  const namedCompanySelected = namedCompanyOptions.map(function(options) {
-    return options.find(function(item) { return item.selected; });
-  }).find(Boolean);
-  if (namedCompanySelected) return namedCompanySelected.option;
-  const namedCompanyFallback = namedCompanyOptions.find(function(options) { return options.length; });
-
+  ]);
+  if (direct) return direct;
   const selectRegex = /<select[^>]*>([\s\S]*?)<\/select>/gi;
-  let companyFallback = null;
-  const selects = [];
   let selectMatch;
   while ((selectMatch = selectRegex.exec(String(html || ''))) !== null) {
-    const selectHtml = selectMatch[0];
     const options = [];
     const optionRegex = /<option([^>]*)value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/gi;
     let optionMatch;
@@ -557,17 +553,11 @@ function extractCompanySelection(html) {
     const companyOptions = options.filter(function(option) {
       return /^[A-Z0-9]{2,4}\s*-\s*/i.test(option.label);
     });
-    const isCompanySelect = companyOptions.length >= 2;
-    selects.push({ html: selectHtml, companyOptions: companyOptions, isCompanySelect: isCompanySelect });
-    if (isCompanySelect && !companyFallback) companyFallback = companyOptions[0];
+    if (companyOptions.length >= 2) {
+      return companyOptions.find(function(option) { return /\bselected\b/i.test(option.attrs); }) || companyOptions[0];
+    }
   }
-
-  const selectedCompany = selects.map(function(select) {
-    if (!select.isCompanySelect) return null;
-    return select.companyOptions.find(function(option) { return /\bselected\b/i.test(option.attrs); });
-  }).find(Boolean);
-  if (selectedCompany) return selectedCompany;
-  return namedCompanyFallback ? namedCompanyFallback[0].option : companyFallback;
+  return null;
 }
 
 function extractCompanyText(html) {
@@ -609,27 +599,35 @@ async function main() {
   // 1. ดึงหน้าหลัก organization_chart.php
   console.log('กำลังโหลดหน้า https://rocket75.com/hr/organization_chart.php ...');
   const mainHtml = await fetchOrgChartPage(auth);
-  const companySelection = extractCompanySelection(mainHtml);
-  const baseContext = {
-    company: companySelection ? companySelection.label : '',
-    department: '',
-    team: ''
-  };
-  const mainEmployees = extractEmployeesFromHtml(mainHtml, baseContext);
-  console.log('พบพนักงานจากหน้าหลัก: ' + mainEmployees.length + ' คน');
-  for (const emp of mainEmployees) {
-    if (emp.employeeId) {
+  if (!String(mainHtml || '').trim()) throw new Error('No employees parsed; keeping previous sheet data.');
+  let companies;
+  try {
+    companies = extractCompanyOptions(mainHtml);
+  } catch (err) {
+    companies = [];
+  }
+  if (!companies.length) {
+    let selectedCompany = null;
+    try { selectedCompany = extractCompanySelection(mainHtml); } catch (err) { /* no company options in malformed/empty fixtures */ }
+    if (selectedCompany) companies.push({ id: selectedCompany.value, label: selectedCompany.label });
+  }
+  if (!companies.length) throw new Error('No companies discovered; keeping previous sheet data.');
+
+  for (const company of companies) {
+    const companyContext = { company: company.label, department: '', team: '' };
+    console.log('Loading company ' + company.label + ' (' + company.id + ')');
+    const companyHtml = await fetchOrgChartPage(auth, company.id);
+    const mainEmployees = extractEmployeesFromHtml(companyHtml, companyContext);
+    for (const emp of mainEmployees) {
+      if (!emp.employeeId) continue;
       allEmployeesMap.set(emp.employeeId, mergeEmployee(allEmployeesMap.get(emp.employeeId), emp));
     }
-  }
 
-  // 2. ดึงจาก Table.php
-  const tableHtml = await fetchOrgChartTableAjax(auth, '');
-  if (tableHtml) {
-  const tableEmployees = applyTeamHierarchy(extractEmployeesFromHtml(tableHtml, baseContext));
-    console.log('พบพนักงานจาก Table.php: ' + tableEmployees.length + ' คน');
-    for (const emp of tableEmployees) {
-      if (emp.employeeId) {
+    const tableHtml = await fetchOrgChartTableAjax(auth, '', company.id);
+    if (tableHtml) {
+      const tableEmployees = applyTeamHierarchy(extractEmployeesFromHtml(tableHtml, companyContext));
+      for (const emp of tableEmployees) {
+        if (!emp.employeeId) continue;
         allEmployeesMap.set(emp.employeeId, mergeEmployee(allEmployeesMap.get(emp.employeeId), emp));
       }
     }

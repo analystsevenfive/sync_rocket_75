@@ -164,28 +164,35 @@ test('gasoline inherits Date Arrived, Customer, and Job No across duplicate/sibl
   assert.equal(write.values[1][4], 'ช่างบี');
 });
 
-test('gasoline computeDateRange defaults to the 16th of 2 months ago and supports rollover across years', () => {
+test('gasoline computeDateRange moves the start date on the 16th and supports year rollover', () => {
   const script = loadScript('sync-gasoline.js');
-  // 11 September 2026 -> 16/07/2026 to 11/09/2026 (ย้อนหลัง 2 เดือน เริ่มวันที่ 16: ก.ค. - ก.ย.)
-  const sepDate = new Date('2026-09-11T08:00:00+07:00');
-  const sepRange = script.computeDateRange('', '', sepDate);
-  assert.equal(sepRange.start, '16/07/2026');
-  assert.equal(sepRange.end, '11/09/2026');
+  // The range start stays unchanged through the 15th and advances on the 16th.
+  const oct15 = new Date('2026-10-15T08:00:00+07:00');
+  const beforeCutoff = script.computeDateRange('', '', oct15);
+  assert.equal(beforeCutoff.start, '16/07/2026');
+  assert.equal(beforeCutoff.end, '15/10/2026');
 
-  // Year rollover (Feb): 15 February 2027 -> 16/12/2026 to 15/02/2027
+  const oct16 = new Date('2026-10-16T08:00:00+07:00');
+  const onCutoff = script.computeDateRange('', '', oct16);
+  assert.equal(onCutoff.start, '16/08/2026');
+  assert.equal(onCutoff.end, '16/10/2026');
+
+  // Year rollover (Feb): start advances from November to December on the 16th.
   const febDate = new Date('2027-02-15T10:00:00+07:00');
   const febRange = script.computeDateRange('', '', febDate);
-  assert.equal(febRange.start, '16/12/2026');
+  assert.equal(febRange.start, '16/11/2026');
   assert.equal(febRange.end, '15/02/2027');
+  const feb16 = new Date('2027-02-16T10:00:00+07:00');
+  assert.equal(script.computeDateRange('', '', feb16).start, '16/12/2026');
 
-  // Year rollover (Jan): 15 January 2027 -> 16/11/2026 to 15/01/2027
+  // Year rollover (Jan): 15 January 2027 -> 16/10/2026 to 15/01/2027
   const janDate = new Date('2027-01-15T10:00:00+07:00');
   const janRange = script.computeDateRange('', '', janDate);
-  assert.equal(janRange.start, '16/11/2026');
+  assert.equal(janRange.start, '16/10/2026');
   assert.equal(janRange.end, '15/01/2027');
 
   // Override support
-  const overrideRange = script.computeDateRange('01/05/2026', '31/05/2026', sepDate);
+  const overrideRange = script.computeDateRange('01/05/2026', '31/05/2026', oct15);
   assert.equal(overrideRange.start, '01/05/2026');
   assert.equal(overrideRange.end, '31/05/2026');
 });
@@ -307,10 +314,167 @@ test('empty employee scrape cannot replace the existing directory', async () => 
   const script = loadScript('sync-employee.js', {
     './lib/rocket-client': { rocketLogin: async () => ({}) }
   });
-  script.fetchOrgChartPage = async () => '';
+  script.fetchOrgChartPage = async () => '<select><option value="75">75 - Company</option><option value="BK">BK - Other</option></select>';
   script.fetchOrgChartTableAjax = async () => '';
   script.fetchDepartmentIds = async () => [];
-  await assert.rejects(script.main(), /No employees parsed/);
+  await assert.rejects(script.main(), /No employees parsed|No companies discovered/);
+});
+
+test('employee sync can write the primary organization table without department discovery', async () => {
+  let writtenRows;
+  const script = loadScript('sync-employee.js', {
+    './lib/rocket-client': {
+      rocketLogin: async () => ({}),
+      formatDateTimeBangkok: () => 'now',
+      cleanText: value => value
+    },
+    './lib/sheets-client': {
+      getSheetsClient: async () => ({}),
+      ensureSheetExists: async () => 1,
+      replaceSheetData: async (sheets, id, sheetId, name, headers, rows) => {
+        writtenRows = { headers, rows };
+      }
+    }
+  });
+  script.fetchOrgChartPage = async () => '<select><option value="75">75 - Company</option><option value="BK">BK - Other</option></select>';
+  script.fetchOrgChartTableAjax = async () => '<div>employee table</div>';
+  script.extractEmployeesFromHtml = () => [{
+    company: '75 - Company', department: '', team: '', position: 'Staff',
+    level: 'L.3', employeeId: '0100001', fullName: 'Test User'
+  }];
+  await script.main();
+  assert.equal(writtenRows.rows.length, 1);
+  assert.equal(writtenRows.rows[0][1], '');
+  assert.equal(writtenRows.rows[0][2], '');
+});
+
+test('employee sync collects every company before replacing the sheet', async () => {
+  let writtenRows;
+  const script = loadScript('sync-employee.js', {
+    './lib/rocket-client': { rocketLogin: async () => ({}), formatDateTimeBangkok: () => 'now', cleanText: value => value },
+    './lib/sheets-client': {
+      getSheetsClient: async () => ({}), ensureSheetExists: async () => 1,
+      replaceSheetData: async (sheets, id, sheetId, name, headers, rows) => { writtenRows = rows; }
+    }
+  });
+  script.fetchOrgChartPage = async () => '<select name="hr_company"><option value="75">75 - Company A</option>' +
+    '<option value="BK">BK - Company B</option><option value="NTS">NTS - Company C</option></select>';
+  const requested = [];
+  script.fetchOrgChartPage = async (auth, companyId) => {
+    requested.push('page:' + (companyId || 'initial'));
+    return '<select name="hr_company"><option value="75">75 - Company A</option>' +
+      '<option value="BK">BK - Company B</option><option value="NTS">NTS - Company C</option></select>';
+  };
+  script.fetchOrgChartTableAjax = async (auth, departmentId, companyId) => {
+    requested.push('table:' + companyId);
+    return '<table>rows for ' + companyId + '</table>';
+  };
+  script.extractEmployeesFromHtml = (html, context) => [{
+    company: context.company, department: '', team: '', position: 'Staff', level: 'L.3',
+    employeeId: context.company.slice(0, 2) + '00001', fullName: context.company
+  }];
+  await script.main();
+  assert.deepEqual(requested, [
+    'page:initial', 'page:75', 'table:75', 'page:BK', 'table:BK', 'page:NTS', 'table:NTS'
+  ]);
+  assert.deepEqual(Array.from(writtenRows, row => row[0]), [
+    '75 - Company A', 'BK - Company B', 'NTS - Company C'
+  ]);
+});
+
+test('employee organization context keeps the selected department and manager group head', () => {
+  const script = loadScript('sync-employee.js');
+  const employees = [
+    { position: 'กรรมการบริหาร', level: 'L.11', employeeId: '0100001', fullName: 'Exec One' },
+    { position: 'ผู้จัดการแผนกบัญชี', level: 'L.8', employeeId: '0100002', fullName: 'Manager One' },
+    { position: 'เจ้าหน้าที่บัญชี', level: 'L.4', employeeId: '0100003', fullName: 'Staff One' }
+  ];
+  const result = script.applyOrgContext(employees, {
+    company: '75 - Company', department: 'บัญชี'
+  });
+
+  assert.equal(result[0].department, 'บัญชี');
+  assert.equal(result[0].team, '');
+  assert.equal(result[1].department, 'บัญชี');
+  assert.match(result[1].team, /0100002/);
+  assert.equal(result[2].department, 'บัญชี');
+  assert.match(result[2].team, /0100002/);
+  assert.equal(result[2].company, '75 - Company');
+});
+
+test('employee department comes from management position and team follows source hierarchy', () => {
+  const script = loadScript('sync-employee.js');
+  const sourceOrder = [
+    { position: 'กรรมการบริหาร', level: 'L.11', employeeId: '0107075', fullName: 'Executive' },
+    { position: 'หัวหน้าประสานงานขาย', level: 'L.6', employeeId: '0122012', fullName: 'Sales Lead' },
+    { position: 'เจ้าหน้าที่ขายอาวุโส', level: 'L.4', employeeId: '0107018', fullName: 'Sales Staff' },
+    { position: 'ผู้จัดการแผนกบัญชี', level: 'L.8', employeeId: '0117065', fullName: 'Accounting Manager' },
+    { position: 'เจ้าหน้าที่บัญชีทรัพย์สิน', level: 'L.4', employeeId: '0107033', fullName: 'Accounting Staff' }
+  ];
+  const result = script.applyTeamHierarchy(script.applyOrgContext(sourceOrder, {}));
+  assert.equal(result[1].team, 'หัวหน้าประสานงานขาย - Sales Lead - 0122012');
+  assert.equal(result[2].team, 'หัวหน้าประสานงานขาย - Sales Lead - 0122012');
+  assert.equal(result[3].department, 'บัญชี');
+  assert.equal(result[4].department, 'บัญชี');
+  assert.equal(result[4].team, 'ผู้จัดการแผนกบัญชี - Accounting Manager - 0117065');
+  assert.equal(script.inferDepartmentFromPosition('ผู้จัดการแผนกบัญชี'), 'บัญชี');
+  assert.equal(script.inferDepartmentFromPosition('หัวหน้าประสานงานขาย'), 'การตลาด');
+  assert.equal(script.inferDepartmentFromPosition('หัวหน้าช่างเทคนิค ทีม B'), 'ช่างเทคนิค');
+});
+
+test('employee sync maps sales to marketing and links executive assistants to the named director', () => {
+  const script = loadScript('sync-employee.js');
+  const employees = [
+    { position: 'กรรมการบริหาร คุณอรุณี ตั้งกมลสุข', level: 'L.11', employeeId: '0107088', fullName: 'อรุณี ตั้งกมลสุข' },
+    { position: 'ผู้ช่วยผู้บริหาร (คุณอรุณี)', level: 'L.8', employeeId: '0114034', fullName: 'กรลักษณ์ สาสงวน' },
+    { position: 'หัวหน้าประสานงานขาย', level: 'L.6', employeeId: '0122012', fullName: 'ณฐกร เย็นวัฒนากุล' },
+    { position: 'เจ้าหน้าที่ขายอาวุโส', level: 'L.4', employeeId: '0107018', fullName: 'ฉัฐชนก แสนยศ' }
+  ];
+  const result = script.applyTeamHierarchy(script.applyOrgContext(employees, {}));
+  assert.equal(result[1].team, 'กรรมการบริหาร คุณอรุณี ตั้งกมลสุข - อรุณี ตั้งกมลสุข - 0107088');
+  assert.equal(result[2].department, 'การตลาด');
+  assert.equal(result[3].department, 'การตลาด');
+  assert.equal(result[3].team, 'หัวหน้าประสานงานขาย - ณฐกร เย็นวัฒนากุล - 0122012');
+});
+
+test('employee company filter is found by id or by company option pattern', () => {
+  const script = loadScript('sync-employee.js');
+  const byId = '<select id="hr_company"><option value="x">ทั้งหมด</option>' +
+    '<option value="75" selected>75 - เซเว่นไฟว์ ดิสทริบิวเตอร์</option></select>';
+  assert.equal(script.extractCompanyText(byId), '75 - เซเว่นไฟว์ ดิสทริบิวเตอร์');
+  assert.equal(script.extractCompanySelection(byId).value, '75');
+
+  const byOptions = '<select class="form-control"><option value="x">ทั้งหมด</option>' +
+    '<option value="75">75 - เซเว่นไฟว์ ดิสทริบิวเตอร์</option>' +
+    '<option value="BK">BK - บางกอก เซเว่นไฟว์</option></select>';
+  assert.equal(script.extractCompanyText(byOptions), '75 - เซเว่นไฟว์ ดิสทริบิวเตอร์');
+});
+
+test('employee departments fall back to the select following the company filter', async () => {
+  const script = loadScript('sync-employee.js', {
+    './lib/rocket-client': {
+      cleanText: rocket.cleanText,
+      fetchWithTimeout: async () => new Response('', { status: 404 })
+    }
+  });
+  const html = '<select class="generated"><option value="75">75 - Company</option>' +
+    '<option value="BK">BK - Company</option></select>' +
+    '<select class="generated"><option value="x">ทั้งหมด</option>' +
+    '<option value="10">การตลาด</option><option value="20">บัญชี</option></select>';
+  const departments = await script.fetchDepartmentIds({}, html, '75');
+  assert.equal(JSON.stringify(departments), JSON.stringify([
+    { id: '10', name: 'การตลาด' }, { id: '20', name: 'บัญชี' }
+  ]));
+});
+
+test('duplicate employee rows do not overwrite an established organization path', () => {
+  const script = loadScript('sync-employee.js');
+  const first = { employeeId: '0100003', company: '75', department: 'Exec A', team: 'Manager A' };
+  const duplicate = { employeeId: '0100003', company: '', department: 'Exec B', team: 'Manager B', desk: '101' };
+  const merged = script.mergeEmployee(first, duplicate);
+  assert.equal(merged.department, 'Exec A');
+  assert.equal(merged.team, 'Manager A');
+  assert.equal(merged.desk, '101');
 });
 
 test('HTTP 200 login/blank pages are not mistaken for an empty ticket table', async () => {
@@ -745,3 +909,42 @@ for (const scriptName of ['sync-tomorrow-plan.js', 'sync-yesterday-jobs.js', 'sy
 }
 
 
+
+test('gasoline URL never falls back to a sibling sub-ticket link via the parent ticket', async () => {
+  const script = loadScript('sync-gasoline.js');
+  const { sheets, state } = fakeSheets();
+  sheets.spreadsheets.values.clear = async () => { state.values = []; };
+  const r01Url = 'https://rocket75.com/main/ticket_checkrepair_view.php?id=111';
+  const ctx = {
+    existingReviews: {}, existingNotes: {}, existingAllTechs: {},
+    existingUrls: { 'BKRM0926-000699.R01': r01Url },
+    existingArrivedDates: {}, lastRow: 2
+  };
+  // urlMap มี entry ของ parent ที่ชี้ไป .R01 (จาก getTicketNoToUrlMap)
+  const urlMap = { 'BKRM0926-000699.R01': r01Url, 'BKRM0926-000699': r01Url };
+  const row = { ticketNo: 'BKRM0926-000699.R02', technician: 'A', counted: 1, arrivedDate: '28/10/2026', jobNo: '', customer: 'C', team: 'B', remarks: '' };
+
+  await script.clearAndWriteGasolineRows(sheets, 'test', 0, 'Gasoline Detail', [row], ctx, urlMap, {}, 'now');
+
+  assert.equal(state.writes[0].values[0][10], '');
+});
+
+test('gasoline drops existing URLs shared by sibling sub-tickets so they are re-resolved', async () => {
+  const script = loadScript('sync-gasoline.js');
+  const { sheets, state } = fakeSheets();
+  const url = 'https://rocket75.com/main/ticket_checkrepair_view.php?id=111';
+  const ownUrl = 'https://rocket75.com/main/ticket_checkrepair_view.php?id=222';
+  state.values = [
+    ['28/10/2026', '', 'BKRM0926-000699.R01', 'C', 'A', '', '', 1, '', '', url],
+    ['28/10/2026', '', 'BKRM0926-000699.R02', 'C', 'A', '', '', 1, '', '', url],
+    ['28/10/2026', '', 'BKRM0926-000699.R02', 'C', 'B', '', '', 1, '', '', url],
+    ['28/10/2026', '', 'BKRM1026-000442.R02', 'C', 'A', '', '', 1, '', '', ownUrl],
+    ['28/10/2026', '', 'BKRM1026-000442.R02', 'C', 'B', '', '', 1, '', '', ownUrl]
+  ];
+
+  const ctx = await script.buildRowIndex(sheets, 'test', 'Gasoline Detail', 0, { start: 's', end: 'e' }, 5);
+
+  assert.equal(ctx.existingUrls['BKRM0926-000699.R01'], undefined);
+  assert.equal(ctx.existingUrls['BKRM0926-000699.R02'], undefined);
+  assert.equal(ctx.existingUrls['BKRM1026-000442.R02'], ownUrl);
+});
