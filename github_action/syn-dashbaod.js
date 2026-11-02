@@ -139,9 +139,11 @@ function extractDashboardRows(buffer) {
     return i;
   });
   const ticketCol = header.indexOf('Ticket');
+  const statusCol = header.indexOf('สถานะงาน');
 
+  // ตัดแถวที่สถานะงานว่างออก
   return rows.slice(headerIndex + 1)
-    .filter(row => String(row[ticketCol] || '').trim())
+    .filter(row => String(row[ticketCol] || '').trim() && String(row[statusCol] || '').trim())
     .map(row => columns.map(i => String(row[i] == null ? '' : row[i]).trim()));
 }
 
