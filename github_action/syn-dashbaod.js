@@ -26,6 +26,8 @@ const DASHBOARD_HEADERS = [
   'ยี่ห้อสินค้า', 'รุ่นสินค้า', 'สถานะประกัน', 'สถานะงาน', 'เวลาทั้งหมด',
   'บันทึกประจำวัน'
 ];
+const SHEET_HEADERS = DASHBOARD_HEADERS.concat(['Url Link']);
+const TICKET_COL = DASHBOARD_HEADERS.indexOf('Ticket');
 
 
 
@@ -91,6 +93,31 @@ async function getOverallReport(auth, startDate, endDate, areaValue) {
     throw new Error('Overall report ไม่ได้คืนไฟล์ Excel: ' + buffer.toString('utf8', 0, 300));
   }
   return buffer;
+}
+
+
+
+// export ไม่มี id ของ ticket — ดึงตาราง ticket_list (getTable.php)
+// ช่วงเดียวกันมาแมป เลข ticket -> ticket_view.php?id=...
+function extractTicketUrlMap(html) {
+  const map = {};
+  const re = /ticket_view\.php\?id=(\d+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const ticketNo = rocket.cleanText(m[2]).toUpperCase();
+    if (ticketNo && !map[ticketNo]) {
+      map[ticketNo] = rocket.ROCKET_BASE + '/main/ticket_view.php?id=' + m[1];
+    }
+  }
+  return map;
+}
+
+
+
+function lookupTicketUrl(urlMap, ticketNo) {
+  const key = String(ticketNo).trim().toUpperCase();
+  // เผื่อ export ให้เลข sub ticket (มี .xxx ต่อท้าย) — ตกไปใช้ parent
+  return urlMap[key] || urlMap[key.split('.')[0]] || '';
 }
 
 
@@ -166,13 +193,22 @@ async function main() {
   console.log('แบ่งเป็น ' + months.length + ' เดือน');
 
   const monthRows = await rocket.mapConcurrentStrict(months, MONTH_CONCURRENCY, async function(month) {
-    const buffer = await getOverallReport(auth, month.start, month.end, areaValue);
-    const rows = extractDashboardRows(buffer);
+    const [buffer, listHtml] = await Promise.all([
+      getOverallReport(auth, month.start, month.end, areaValue),
+      rocket.getParentTicketHtml(auth, month.start, month.end)
+    ]);
+    const urlMap = extractTicketUrlMap(listHtml);
+    const rows = extractDashboardRows(buffer)
+      .map(row => row.concat([lookupTicketUrl(urlMap, row[TICKET_COL])]));
     console.log('  ' + month.start + ' - ' + month.end + ': ' + rows.length + ' แถว');
     return rows;
   });
   const rows = [].concat(...monthRows);
-  console.log('ROWS: ' + rows.length);
+  const missingUrl = rows.filter(row => !row[row.length - 1]);
+  console.log('ROWS: ' + rows.length + ' (ไม่เจอ URL ' + missingUrl.length + ')');
+  if (missingUrl.length) {
+    console.log('ตัวอย่าง Ticket ที่ไม่เจอ URL: ' + missingUrl.slice(0, 5).map(row => row[TICKET_COL]).join(', '));
+  }
 
   if (rows.length === 0) {
     throw new Error('ได้ 0 แถว — น่าจะเป็น fetch/parse ผิดพลาด ไม่เขียนทับชีท');
@@ -188,7 +224,7 @@ async function main() {
   const lastSync = rocket.formatDateTimeBangkok(new Date());
   const summaryText = 'สาขา ' + BRANCH_NAME + ' | ช่วงข้อมูล ' + START_DATE + ' - ' + endDate +
     ' | จำนวน ' + rows.length.toLocaleString('en-US') + ' รายการ | Last Sync ' + lastSync;
-  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, DASHBOARD_SHEET_NAME, summaryText, DASHBOARD_HEADERS, rows);
+  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, DASHBOARD_SHEET_NAME, summaryText, SHEET_HEADERS, rows);
 
   console.log('เขียนลงชีท \'' + DASHBOARD_SHEET_NAME + '\' สำเร็จ: ' + rows.length + ' แถว');
   console.log('DONE');
