@@ -29,4 +29,4 @@ jobs:
           ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        run: node syn-dashbaod.js
+        run: node sync-dashbaod.js

@@ -7,3 +7,6 @@ sync-rocket-507005-06713c54ae3e.json
 
 # Node.js
 node_modules/
+.env
+.env.*
+!.env.example

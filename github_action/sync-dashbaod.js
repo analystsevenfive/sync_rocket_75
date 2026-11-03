@@ -26,8 +26,35 @@ const DASHBOARD_HEADERS = [
   'ยี่ห้อสินค้า', 'รุ่นสินค้า', 'สถานะประกัน', 'สถานะงาน', 'เวลาทั้งหมด',
   'บันทึกประจำวัน'
 ];
+// These fields are included in the overall-report export and are kept before
+// the generated ticket URL column in the destination sheet.
+DASHBOARD_HEADERS.push('Check In Date', 'Check Out Date');
 const SHEET_HEADERS = DASHBOARD_HEADERS.concat(['Url Link']);
 const TICKET_COL = DASHBOARD_HEADERS.indexOf('Ticket');
+const STATUS_COL = DASHBOARD_HEADERS.indexOf('สถานะงาน');
+const CHECK_OUT_COL = DASHBOARD_HEADERS.indexOf('Check Out Date');
+const COMPLETED_YEAR = 2026;
+
+
+
+function dateYear(value) {
+  const text = String(value == null ? '' : value).trim();
+  const match = text.match(/(?:^|\D)((?:19|20|25)\d{2})(?:\D|$)/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  return year >= 2400 ? year - 543 : year;
+}
+
+
+
+function shouldIncludeDashboardRow(row) {
+  const status = String(row[STATUS_COL] == null ? '' : row[STATUS_COL]).trim();
+  const checkOut = String(row[CHECK_OUT_COL] == null ? '' : row[CHECK_OUT_COL]).trim();
+  const completed = Boolean(checkOut) || /(จบ|เสร็จ|ปิดงาน)/.test(status);
+
+  if (completed) return dateYear(checkOut) === COMPLETED_YEAR;
+  return Boolean(status);
+}
 
 
 
@@ -166,12 +193,12 @@ function extractDashboardRows(buffer) {
     return i;
   });
   const ticketCol = header.indexOf('Ticket');
-  const statusCol = header.indexOf('สถานะงาน');
-
-  // ตัดแถวที่สถานะงานว่างออก
+  // งานที่จบแล้วใช้ Check Out Date เป็นเกณฑ์ และเก็บเฉพาะปี 2026
+  // งานที่ยังไม่จบยังคงต้องมีสถานะงานเหมือนเดิม
   return rows.slice(headerIndex + 1)
-    .filter(row => String(row[ticketCol] || '').trim() && String(row[statusCol] || '').trim())
-    .map(row => columns.map(i => String(row[i] == null ? '' : row[i]).trim()));
+    .filter(row => String(row[ticketCol] || '').trim())
+    .map(row => columns.map(i => String(row[i] == null ? '' : row[i]).trim()))
+    .filter(shouldIncludeDashboardRow);
 }
 
 
@@ -231,7 +258,11 @@ async function main() {
 
 }
 
-main().catch(function(err) {
-  console.error('Sync ล้มเหลว:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(function(err) {
+    console.error('Sync ล้มเหลว:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { dateYear, shouldIncludeDashboardRow };
