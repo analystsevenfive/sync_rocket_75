@@ -1,11 +1,15 @@
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
+const { checkApproval } = require('./lib/memo-approval');
 
 const SHEET_NAME = 'Memo';
 const HEADERS = [
   'เนื้อหา', 'รายละเอียด', 'จังหวัด', 'วันที่', 'Count Date',
-  'ผู้ทำรายการ', 'วันที่ทำรายการ', 'เลขที่งาน', 'ช่าง', 'ป้ายทะเบียน', 'ไฟล์', 'ลิงก์ PDF', 'Last Sync'
+  'ผู้ทำรายการ', 'วันที่ทำรายการ', 'เลขที่งาน', 'ช่าง', 'ป้ายทะเบียน', 'ไฟล์', 'ลิงก์ PDF', 'สถานะอนุมัติ', 'ผู้อนุมัติ', 'Last Sync'
 ];
+const APPROVED = 'อนุมัติแล้ว';
+const APPROVAL_LABELS = { approved: APPROVED, 'other-sender': 'สติกเกอร์จากคนอื่น', 'no-sticker': 'ไม่พบสติกเกอร์' };
+const APPROVER = 'คุณวิรัตน์'; // ยืนยันจากรูปโปรไฟล์ Virat 75 ข้างสติกเกอร์
 
 const MONTHS = {
   มกราคม: 1, กุมภาพันธ์: 2, มีนาคม: 3, เมษายน: 4, พฤษภาคม: 5, มิถุนายน: 6,
@@ -150,6 +154,20 @@ async function fetchMemoTable(auth, range) {
   throw new Error('No Memo rows could be read from Rocket; keeping previous sheet data');
 }
 
+async function approvalStatus(url) {
+  if (!url) return 'ตรวจไม่ได้';
+  try {
+    const response = await rocket.fetchWithTimeout(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const pdf = Buffer.from(await response.arrayBuffer());
+    if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('not a PDF');
+    return APPROVAL_LABELS[await checkApproval(pdf)];
+  } catch (error) {
+    console.log(`Memo approval check failed for ${url}: ${error.message}`);
+    return 'ตรวจไม่ได้';
+  }
+}
+
 async function main() {
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) throw new Error('SPREADSHEET_ID is required');
@@ -161,13 +179,15 @@ async function main() {
   });
   if (!memos.length) throw new Error(`No Memo rows in ${range.from} to ${range.to}; keeping previous sheet data`);
   const now = rocket.formatDateTimeBangkok(new Date());
-  const rows = memos.map(memo => {
+  const rows = [];
+  for (const memo of memos) {
     const parsed = splitDetails(memo.detail);
     const people = splitTechniciansAndPlates(memo.technicians);
-    return [memo.subject, memo.detail, parsed.province, parsed.date, parsed.countDate,
+    const status = await approvalStatus(memo.url);
+    rows.push([memo.subject, memo.detail, parsed.province, parsed.date, parsed.countDate,
       memo.creator, memo.createdAt, memo.refs, people.technicians, people.plates,
-      memo.file, memo.url, now];
-  });
+      memo.file, memo.url, status, status === APPROVED ? APPROVER : '', now]);
+  }
   const sheets = await sheetsLib.getSheetsClient();
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, SHEET_NAME);
   const summaryText = `ช่วงข้อมูล ${displayDate(range.from)} - ${displayDate(range.to)} | จำนวน ${rows.length.toLocaleString('en-US')} รายการ`;
