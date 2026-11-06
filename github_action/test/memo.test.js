@@ -11,11 +11,11 @@ test('vehicle registration is separated from technician names', () => {
     { technicians: '1.ช่างคนแรก\n2.ช่างคนที่สอง', plates: '' });
 });
 
-test('Memo range covers the last 7 days in Bangkok time', () => {
+test('Memo range begins on first day of previous Bangkok month', () => {
   assert.deepEqual(memoRange(new Date('2026-11-06T05:00:00Z')),
-    { from: '2026-10-30', to: '2026-11-06' });
+    { from: '2026-10-01', to: '2026-11-06' });
   assert.deepEqual(memoRange(new Date('2026-01-02T18:00:00Z')),
-    { from: '2025-12-27', to: '2026-01-03' });
+    { from: '2025-12-01', to: '2026-01-03' });
 });
 
 test('Memo detail yields province and inclusive count of scheduled dates', () => {

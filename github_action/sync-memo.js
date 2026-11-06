@@ -2,7 +2,6 @@ const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
 const SHEET_NAME = 'Memo';
-const LOOKBACK_DAYS = 7;
 const HEADERS = [
   'เนื้อหา', 'รายละเอียด', 'จังหวัด', 'วันที่', 'Count Date',
   'ผู้ทำรายการ', 'วันที่ทำรายการ', 'เลขที่งาน', 'ช่าง', 'ป้ายทะเบียน', 'ไฟล์', 'ลิงก์ PDF', 'Last Sync'
@@ -27,9 +26,9 @@ function memoRange(now = new Date()) {
   }).formatToParts(now);
   const part = type => Number(parts.find(p => p.type === type).value);
   const year = part('year'), month = part('month'), day = part('day');
-  const start = new Date(Date.UTC(year, month - 1, day - LOOKBACK_DAYS));
+  const previous = new Date(Date.UTC(year, month - 2, 1));
   const key = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  return { from: key(start.getUTCFullYear(), start.getUTCMonth() + 1, start.getUTCDate()), to: key(year, month, day) };
+  return { from: key(previous.getUTCFullYear(), previous.getUTCMonth() + 1, 1), to: key(year, month, day) };
 }
 
 function displayDate(key) {
