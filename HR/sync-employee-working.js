@@ -26,7 +26,7 @@ const DETAIL_FIELDS = [
   'โทรศัพท์บ้าน', 'โทรศัพท์มือถือ', 'อีเมล', 'ผู้ติดต่อฉุกเฉิน', 'ความสัมพันธ์', 'เบอร์โทรผู้ติดต่อฉุกเฉิน'
 ];
 const HEADERS = [
-  'รูป', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'วันที่เริ่มงาน', 'อายุงาน',
+  'รูป', 'ลิงก์รูป', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'วันที่เริ่มงาน', 'อายุงาน',
   'รหัสตำแหน่ง', 'ตำแหน่ง', 'แผนก', 'บริษัท', 'เลเวล', 'สถานะ',
   ...DETAIL_FIELDS, 'User ID', 'Last Sync'
 ];
@@ -149,6 +149,7 @@ function toRow(employee, detail, syncedAt) {
   });
   return [
     photoFormula(employee.photoUrl),
+    employee.photoUrl, // ไม่ผ่าน asText: ให้ Sheets ทำเป็นลิงก์กดได้ และเป็น https:// เสมอ
     ...[employee.employeeId, employee.fullName, employee.startDate, employee.tenure,
       employee.positionCode, employee.position, employee.department, employee.company,
       employee.level, employee.status,

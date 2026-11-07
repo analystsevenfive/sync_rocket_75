@@ -168,3 +168,12 @@ test('row matches headers and only the photo is a formula', () => {
   assert.equal(values[0], '=IMAGE("https://rocket75.com/images/0100001.png")');
   assert.ok(values.slice(1).every(v => !String(v).startsWith('=')));
 });
+
+test('photo link column holds the plain url so Sheets makes it clickable', () => {
+  const [employee] = parseEmployeeList(table(row()));
+  const values = toRow(employee, {}, 'now');
+  assert.equal(HEADERS.indexOf('ลิงก์รูป'), 1);
+  assert.equal(values[1], 'https://rocket75.com/images/0100001.png');
+  assert.equal(values[2], "'0100001");
+  assert.equal(toRow({ ...employee, photoUrl: '' }, {}, 'now')[1], '');
+});
