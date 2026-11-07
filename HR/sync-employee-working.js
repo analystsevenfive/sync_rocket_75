@@ -107,8 +107,10 @@ function sharedPhotoUrls(employees) {
 // กันเขียนข้อมูลผิดคน: ถ้า endpoint คืนของบัญชีที่ login แทน user_id ที่ขอ
 // หรือหน้าเปลี่ยนรูปแบบ ต้องหยุดทั้งรอบ ไม่ใช่เขียนทับชีท
 // ชื่อในหน้า list กับ detail อาจต่างกันได้ (เช่นสะกดคนละแบบ) จึงยอมรับรูปที่ตรงกันเป็นหลักฐานแทน
+// คืน false เมื่อ detail ไม่มีชื่อเลยและไม่มีรูปยืนยัน (ประวัติยังกรอกไม่ครบ): ไม่ใช่ข้อมูลผิดคน
+// ไม่ต้องหยุดทั้งรอบ แต่ห้ามเขียนค่าที่ยืนยันเจ้าของไม่ได้ลงชีท
 // error ห้ามมีค่าจาก detail เพราะข้อความไปอยู่ใน log ของ GitHub Actions
-function assertDetailMatches(employee, detail, photoConfirmed = false) {
+function verifyDetail(employee, detail, photoConfirmed = false) {
   const missing = DETAIL_FIELDS.filter(label => !(label in detail));
   if (missing.length) {
     throw new Error(`Detail for ${employee.employeeId} is missing fields: ${missing.join(', ')}`);
@@ -122,10 +124,10 @@ function assertDetailMatches(employee, detail, photoConfirmed = false) {
   };
   const thai = nameState('ชื่อ (ไทย)');
   const english = nameState('ชื่อ (อังกฤษ)');
-  if (thai !== 'same' && english !== 'same' && !photoConfirmed) {
-    throw new Error(`Detail for ${employee.employeeId} does not match the requested employee ` +
-      `(thai=${thai}, english=${english}, photo=${employee.photoUrl ? 'different' : 'none'})`);
-  }
+  if (thai === 'same' || english === 'same' || photoConfirmed) return true;
+  if (thai === 'blank' && english === 'blank') return false;
+  throw new Error(`Detail for ${employee.employeeId} does not match the requested employee ` +
+    `(thai=${thai}, english=${english}, photo=${employee.photoUrl ? 'different' : 'none'})`);
 }
 
 // เขียนแบบ USER_ENTERED เพราะ =IMAGE() ต้องเป็นสูตร ค่าข้อมูลจึงต้องขึ้นต้นด้วย '
@@ -207,13 +209,18 @@ async function main() {
   // ส่งแค่ index เพราะ mapConcurrentStrict พิมพ์ item ลง error message ตอนล้มเหลว
   const indexes = employees.map((_, i) => i);
   const sharedPhotos = sharedPhotoUrls(employees);
+  const withoutProfile = [];
   const details = await rocket.mapConcurrentStrict(indexes, DETAIL_CONCURRENCY, async i => {
     const employee = employees[i];
     const { detail, photoUrl } = await fetchEmployeeDetail(auth, employee.userId);
     const photoConfirmed = Boolean(photoUrl) && photoUrl === employee.photoUrl && !sharedPhotos.has(photoUrl);
-    assertDetailMatches(employee, detail, photoConfirmed);
-    return detail;
+    if (verifyDetail(employee, detail, photoConfirmed)) return detail;
+    withoutProfile.push(employee.employeeId);
+    return {};
   });
+  if (withoutProfile.length) {
+    console.log(`No verifiable profile, wrote list data only: ${withoutProfile.join(', ')}`);
+  }
 
   const now = rocket.formatDateTimeBangkok(new Date());
   const rows = employees.map((employee, i) => toRow(employee, details[i], now));
@@ -231,6 +238,6 @@ if (require.main === module) main().catch(error => {
 });
 
 module.exports = {
-  parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, assertDetailMatches,
+  parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, verifyDetail,
   asText, photoFormula, toRow, HEADERS, DETAIL_FIELDS
 };

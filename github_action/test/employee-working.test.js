@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, assertDetailMatches,
+  parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, verifyDetail,
   asText, photoFormula, toRow, HEADERS, DETAIL_FIELDS
 } = require('../../HR/sync-employee-working');
 
@@ -102,29 +102,40 @@ test('fields outside the approved list are not written to the row', () => {
 
 test('detail for a different person stops the sync', () => {
   const [employee] = parseEmployeeList(table(row()));
-  assert.doesNotThrow(() => assertDetailMatches(employee, parseEmployeeDetail(detailHtml())));
-  assert.throws(() => assertDetailMatches(employee, parseEmployeeDetail(detailHtml({ 'ชื่อ (ไทย)': 'คนอื่น' }))),
+  assert.doesNotThrow(() => verifyDetail(employee, parseEmployeeDetail(detailHtml())));
+  assert.throws(() => verifyDetail(employee, parseEmployeeDetail(detailHtml({ 'ชื่อ (ไทย)': 'คนอื่น' }))),
     /does not match/);
 });
 
 test('english name or unique photo confirms an employee whose Thai name differs', () => {
   const [employee] = parseEmployeeList(table(row()));
   const differs = parseEmployeeDetail(detailHtml({ 'ชื่อ (ไทย)': 'สะกดอีกแบบ' }));
-  assert.doesNotThrow(() => assertDetailMatches(employee, differs, true));
+  assert.doesNotThrow(() => verifyDetail(employee, differs, true));
   const english = Object.assign({}, employee, { fullName: 'Sample Person' });
-  assert.doesNotThrow(() => assertDetailMatches(english,
+  assert.doesNotThrow(() => verifyDetail(english,
     parseEmployeeDetail(detailHtml({ 'ชื่อ (ไทย)': 'สมมติ', 'ชื่อ (อังกฤษ)': 'SAMPLE' }))));
 });
 
-test('blank detail names without photo evidence stop the sync and report only states', () => {
+test('conflicting name error reports only states, never profile values', () => {
   const [employee] = parseEmployeeList(table(row()));
   const secret = '1000000000000';
-  const detail = parseEmployeeDetail(detailHtml({ 'ชื่อ (ไทย)': '', 'เลขบัตรประชาชน': secret }));
-  assert.throws(() => assertDetailMatches(employee, detail), error => {
-    assert.match(error.message, /thai=blank, english=blank, photo=different/);
-    assert.ok(!error.message.includes(secret));
+  const detail = parseEmployeeDetail(detailHtml({ 'ชื่อ (ไทย)': 'คนอื่น', 'เลขบัตรประชาชน': secret }));
+  assert.throws(() => verifyDetail(employee, detail), error => {
+    assert.match(error.message, /thai=different, english=blank, photo=different/);
+    assert.ok(!error.message.includes(secret) && !error.message.includes('คนอื่น'));
     return true;
   });
+});
+
+test('nameless profile is unverified and writes list data only', () => {
+  const [employee] = parseEmployeeList(table(row({ phone: '0812345678' })));
+  const detail = parseEmployeeDetail(detailHtml({ 'ชื่อ (ไทย)': '', 'เลขบัตรประชาชน': '1000000000000' }));
+  assert.equal(verifyDetail(employee, detail), false);
+  const values = toRow(employee, {}, 'now');
+  assert.equal(values.length, HEADERS.length);
+  assert.equal(values[HEADERS.indexOf('เลขบัตรประชาชน')], '');
+  assert.equal(values[HEADERS.indexOf('ชื่อ-สกุล')], "'สมมติ ทดสอบ");
+  assert.equal(values[HEADERS.indexOf('โทรศัพท์มือถือ')], "'0812345678");
 });
 
 test('photo in the detail page resolves to the same url as the list', () => {
@@ -140,7 +151,7 @@ test('photo used by several employees is not identity evidence', () => {
 
 test('detail page with a missing field stops the sync', () => {
   const [employee] = parseEmployeeList(table(row()));
-  assert.throws(() => assertDetailMatches(employee, parseEmployeeDetail('<form></form>')), /missing fields/);
+  assert.throws(() => verifyDetail(employee, parseEmployeeDetail('<form></form>')), /missing fields/);
 });
 
 test('mobile and email fall back to the list when detail is blank', () => {
