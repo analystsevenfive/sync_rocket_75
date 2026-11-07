@@ -13,8 +13,8 @@
  * ชีทนี้มีข้อมูลส่วนบุคคล: ห้าม console.log ค่าของพนักงาน log เฉพาะจำนวนแถว
  *************************************************/
 
-const rocket = require('./lib/rocket-client');
-const sheetsLib = require('./lib/sheets-client');
+const rocket = require('../github_action/lib/rocket-client');
+const sheetsLib = require('../github_action/lib/sheets-client');
 
 const SHEET_NAME = 'Employee Working';
 const REFERER = `${rocket.ROCKET_BASE}/hr/employee_list.php`;

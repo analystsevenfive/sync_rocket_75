@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   parseEmployeeList, parseEmployeeDetail, assertDetailMatches, asText, photoFormula, toRow, HEADERS, DETAIL_FIELDS
-} = require('../sync-employee-working');
+} = require('../../HR/sync-employee-working');
 
 // ข้อมูลสมมติ โครง HTML ตาม response จริงของ getTable.php
 function row({ code = '0100001', userId = '0123456789', photo = '../images/0100001.png', phone = '', email = '' } = {}) {

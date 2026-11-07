@@ -7,8 +7,8 @@
  * เขียนลงชีท: Employee
  *************************************************/
 
-const rocket = require('./lib/rocket-client');
-const sheetsLib = require('./lib/sheets-client');
+const rocket = require('../github_action/lib/rocket-client');
+const sheetsLib = require('../github_action/lib/sheets-client');
 
 const ROCKET_BASE = 'https://rocket75.com';
 const EMPLOYEE_SHEET_NAME = 'Employee';

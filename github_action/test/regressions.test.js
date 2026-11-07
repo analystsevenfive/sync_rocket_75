@@ -12,7 +12,11 @@ function loadScript(name, mocks = {}) {
   const file = path.join(__dirname, '..', name);
   const source = fs.readFileSync(file, 'utf8').replace(/main\(\)\.catch\([\s\S]*$/, '');
   const context = vm.createContext({
-    require: id => mocks[id] || (id === './lib/rocket-client' ? rocket : {}),
+    // สคริปต์ใน HR/ require ผ่าน ../github_action/lib/ แต่ mocks ใช้ key แบบ ./lib/
+    require: rawId => {
+      const id = rawId.replace('../github_action/lib/', './lib/');
+      return mocks[id] || (id === './lib/rocket-client' ? rocket : {});
+    },
     console: { log() {}, error() {} }, process: { env: { SPREADSHEET_ID: 'test' } },
     setTimeout, clearTimeout, Buffer, URLSearchParams
   });
@@ -311,7 +315,7 @@ test('modal HTTP errors remain errors so snapshot callers can retry and stop', a
 });
 
 test('empty employee scrape cannot replace the existing directory', async () => {
-  const script = loadScript('sync-employee.js', {
+  const script = loadScript('../HR/sync-employee.js', {
     './lib/rocket-client': { rocketLogin: async () => ({}) }
   });
   script.fetchOrgChartPage = async () => '<select><option value="75">75 - Company</option><option value="BK">BK - Other</option></select>';
@@ -322,7 +326,7 @@ test('empty employee scrape cannot replace the existing directory', async () => 
 
 test('employee sync can write the primary organization table without department discovery', async () => {
   let writtenRows;
-  const script = loadScript('sync-employee.js', {
+  const script = loadScript('../HR/sync-employee.js', {
     './lib/rocket-client': {
       rocketLogin: async () => ({}),
       formatDateTimeBangkok: () => 'now',
@@ -350,7 +354,7 @@ test('employee sync can write the primary organization table without department 
 
 test('employee sync collects every company before replacing the sheet', async () => {
   let writtenRows;
-  const script = loadScript('sync-employee.js', {
+  const script = loadScript('../HR/sync-employee.js', {
     './lib/rocket-client': { rocketLogin: async () => ({}), formatDateTimeBangkok: () => 'now', cleanText: value => value },
     './lib/sheets-client': {
       getSheetsClient: async () => ({}), ensureSheetExists: async () => 1,
@@ -383,7 +387,7 @@ test('employee sync collects every company before replacing the sheet', async ()
 });
 
 test('employee organization context keeps the selected department and manager group head', () => {
-  const script = loadScript('sync-employee.js');
+  const script = loadScript('../HR/sync-employee.js');
   const employees = [
     { position: 'กรรมการบริหาร', level: 'L.11', employeeId: '0100001', fullName: 'Exec One' },
     { position: 'ผู้จัดการแผนกบัญชี', level: 'L.8', employeeId: '0100002', fullName: 'Manager One' },
@@ -403,7 +407,7 @@ test('employee organization context keeps the selected department and manager gr
 });
 
 test('employee department comes from management position and team follows source hierarchy', () => {
-  const script = loadScript('sync-employee.js');
+  const script = loadScript('../HR/sync-employee.js');
   const sourceOrder = [
     { position: 'กรรมการบริหาร', level: 'L.11', employeeId: '0107075', fullName: 'Executive' },
     { position: 'หัวหน้าประสานงานขาย', level: 'L.6', employeeId: '0122012', fullName: 'Sales Lead' },
@@ -423,7 +427,7 @@ test('employee department comes from management position and team follows source
 });
 
 test('employee sync maps sales to marketing and links executive assistants to the named director', () => {
-  const script = loadScript('sync-employee.js');
+  const script = loadScript('../HR/sync-employee.js');
   const employees = [
     { position: 'กรรมการบริหาร คุณอรุณี ตั้งกมลสุข', level: 'L.11', employeeId: '0107088', fullName: 'อรุณี ตั้งกมลสุข' },
     { position: 'ผู้ช่วยผู้บริหาร (คุณอรุณี)', level: 'L.8', employeeId: '0114034', fullName: 'กรลักษณ์ สาสงวน' },
@@ -438,7 +442,7 @@ test('employee sync maps sales to marketing and links executive assistants to th
 });
 
 test('employee company filter is found by id or by company option pattern', () => {
-  const script = loadScript('sync-employee.js');
+  const script = loadScript('../HR/sync-employee.js');
   const byId = '<select id="hr_company"><option value="x">ทั้งหมด</option>' +
     '<option value="75" selected>75 - เซเว่นไฟว์ ดิสทริบิวเตอร์</option></select>';
   assert.equal(script.extractCompanyText(byId), '75 - เซเว่นไฟว์ ดิสทริบิวเตอร์');
@@ -451,7 +455,7 @@ test('employee company filter is found by id or by company option pattern', () =
 });
 
 test('employee departments fall back to the select following the company filter', async () => {
-  const script = loadScript('sync-employee.js', {
+  const script = loadScript('../HR/sync-employee.js', {
     './lib/rocket-client': {
       cleanText: rocket.cleanText,
       fetchWithTimeout: async () => new Response('', { status: 404 })
@@ -468,7 +472,7 @@ test('employee departments fall back to the select following the company filter'
 });
 
 test('duplicate employee rows do not overwrite an established organization path', () => {
-  const script = loadScript('sync-employee.js');
+  const script = loadScript('../HR/sync-employee.js');
   const first = { employeeId: '0100003', company: '75', department: 'Exec A', team: 'Manager A' };
   const duplicate = { employeeId: '0100003', company: '', department: 'Exec B', team: 'Manager B', desk: '101' };
   const merged = script.mergeEmployee(first, duplicate);
@@ -506,7 +510,7 @@ test('parent ticket table retries a transient failure', async () => {
 });
 
 test('a discovered employee department cannot silently fail', async () => {
-  const script = loadScript('sync-employee.js', {
+  const script = loadScript('../HR/sync-employee.js', {
     './lib/rocket-client': { ROCKET_BASE: 'https://example.test',
       fetchWithTimeout: async () => ({ status: 503 }) }
   });
