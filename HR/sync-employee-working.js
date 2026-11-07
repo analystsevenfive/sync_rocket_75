@@ -199,17 +199,10 @@ async function setPhotoRowHeight(sheets, spreadsheetId, sheetId, rowCount) {
   });
 }
 
-async function main() {
-  const spreadsheetId = process.env.SPREADSHEET_ID;
-  if (!spreadsheetId) throw new Error('SPREADSHEET_ID is required');
-
-  const auth = await rocket.rocketLogin();
-  const employees = parseEmployeeList(await fetchEmployeeList(auth));
-  if (!employees.length) throw new Error('No employee rows could be read from Rocket; keeping previous sheet data');
-
+// sharedPhotos ต้องคำนวณจากรายชื่อทั้งหมด แม้จะอ่าน detail แค่บางคน
+async function loadDetails(auth, employees, sharedPhotos) {
   // ส่งแค่ index เพราะ mapConcurrentStrict พิมพ์ item ลง error message ตอนล้มเหลว
   const indexes = employees.map((_, i) => i);
-  const sharedPhotos = sharedPhotoUrls(employees);
   const withoutProfile = [];
   const details = await rocket.mapConcurrentStrict(indexes, DETAIL_CONCURRENCY, async i => {
     const employee = employees[i];
@@ -222,15 +215,30 @@ async function main() {
   if (withoutProfile.length) {
     console.log(`No verifiable profile, wrote list data only: ${withoutProfile.join(', ')}`);
   }
+  return details;
+}
 
+async function writeEmployeeSheet(spreadsheetId, sheetName, summaryLabel, employees, details) {
   const now = rocket.formatDateTimeBangkok(new Date());
   const rows = employees.map((employee, i) => toRow(employee, details[i], now));
   const sheets = await sheetsLib.getSheetsClient();
-  const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, SHEET_NAME);
-  const summaryText = `ข้อมูล ณ ${now} | พนักงานที่ทำงานอยู่ ${rows.length.toLocaleString('en-US')} คน`;
-  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, SHEET_NAME, summaryText, HEADERS, rows);
-  await setPhotoRowHeight(sheets, spreadsheetId, sheetId, rows.length);
-  console.log(`Updated ${SHEET_NAME}: ${rows.length} rows`);
+  const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, sheetName);
+  const summaryText = `ข้อมูล ณ ${now} | ${summaryLabel} ${rows.length.toLocaleString('en-US')} คน`;
+  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, sheetName, summaryText, HEADERS, rows);
+  if (rows.length) await setPhotoRowHeight(sheets, spreadsheetId, sheetId, rows.length);
+  console.log(`Updated ${sheetName}: ${rows.length} rows`);
+}
+
+async function main() {
+  const spreadsheetId = process.env.SPREADSHEET_ID;
+  if (!spreadsheetId) throw new Error('SPREADSHEET_ID is required');
+
+  const auth = await rocket.rocketLogin();
+  const employees = parseEmployeeList(await fetchEmployeeList(auth));
+  if (!employees.length) throw new Error('No employee rows could be read from Rocket; keeping previous sheet data');
+
+  const details = await loadDetails(auth, employees, sharedPhotoUrls(employees));
+  await writeEmployeeSheet(spreadsheetId, SHEET_NAME, 'พนักงานที่ทำงานอยู่', employees, details);
 }
 
 if (require.main === module) main().catch(error => {
@@ -240,5 +248,5 @@ if (require.main === module) main().catch(error => {
 
 module.exports = {
   parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, verifyDetail,
-  asText, photoFormula, toRow, HEADERS, DETAIL_FIELDS
+  asText, photoFormula, toRow, fetchEmployeeList, loadDetails, writeEmployeeSheet, HEADERS, DETAIL_FIELDS
 };
