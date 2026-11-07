@@ -895,6 +895,9 @@ for (const scriptName of ['sync-tomorrow-plan.js', 'sync-yesterday-jobs.js', 'sy
         getModalProductHtml: async () => '',
         parseSalesInvoiceNo: () => ''
       },
+      './lib/work-order-report': {
+        getWorkOrderSentReport: async () => new Map([['BKRM01.R01', '']])
+      },
       './lib/sheets-client': {
         getSheetsClient: async () => ({}),
         ensureSheetExists: async () => 1,

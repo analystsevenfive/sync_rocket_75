@@ -88,17 +88,43 @@ function parseEmployeeDetail(html) {
   return detail;
 }
 
+function parseDetailPhotoUrl(html) {
+  const photo = String(html).match(/<img\b[^>]*\bsrc=["']([^"']+)["']/i)?.[1];
+  return photo ? new URL(photo, `${rocket.ROCKET_BASE}/hr/`).href : '';
+}
+
+// รูปยืนยันตัวตนได้ก็ต่อเมื่อเป็นของคนนี้คนเดียว: รูป default ที่หลายคนใช้ร่วมกันไม่นับ
+function sharedPhotoUrls(employees) {
+  const seen = new Set();
+  const shared = new Set();
+  for (const { photoUrl } of employees) {
+    if (seen.has(photoUrl)) shared.add(photoUrl);
+    seen.add(photoUrl);
+  }
+  return shared;
+}
+
 // กันเขียนข้อมูลผิดคน: ถ้า endpoint คืนของบัญชีที่ login แทน user_id ที่ขอ
 // หรือหน้าเปลี่ยนรูปแบบ ต้องหยุดทั้งรอบ ไม่ใช่เขียนทับชีท
-function assertDetailMatches(employee, detail) {
+// ชื่อในหน้า list กับ detail อาจต่างกันได้ (เช่นสะกดคนละแบบ) จึงยอมรับรูปที่ตรงกันเป็นหลักฐานแทน
+// error ห้ามมีค่าจาก detail เพราะข้อความไปอยู่ใน log ของ GitHub Actions
+function assertDetailMatches(employee, detail, photoConfirmed = false) {
   const missing = DETAIL_FIELDS.filter(label => !(label in detail));
   if (missing.length) {
     throw new Error(`Detail for ${employee.employeeId} is missing fields: ${missing.join(', ')}`);
   }
-  const compact = value => String(value || '').replace(/\s+/g, '');
-  const firstName = compact(detail['ชื่อ (ไทย)']);
-  if (!firstName || !compact(employee.fullName).includes(firstName)) {
-    throw new Error(`Detail for ${employee.employeeId} does not match the requested employee`);
+  const compact = value => String(value || '').replace(/\s+/g, '').toLowerCase();
+  const listName = compact(employee.fullName);
+  const nameState = label => {
+    const name = compact(detail[label]);
+    if (!name) return 'blank';
+    return listName.includes(name) ? 'same' : 'different';
+  };
+  const thai = nameState('ชื่อ (ไทย)');
+  const english = nameState('ชื่อ (อังกฤษ)');
+  if (thai !== 'same' && english !== 'same' && !photoConfirmed) {
+    throw new Error(`Detail for ${employee.employeeId} does not match the requested employee ` +
+      `(thai=${thai}, english=${english}, photo=${employee.photoUrl ? 'different' : 'none'})`);
   }
 }
 
@@ -150,7 +176,8 @@ async function fetchEmployeeDetail(auth, userId) {
       Referer: `${rocket.ROCKET_BASE}/hr/employee_view.php?user_id=${userId}`, 'X-Requested-With': 'XMLHttpRequest' }
   });
   if (!response.ok) throw new Error(`employee Get_Position.php HTTP ${response.status}`);
-  return parseEmployeeDetail(await response.text());
+  const html = await response.text();
+  return { detail: parseEmployeeDetail(html), photoUrl: parseDetailPhotoUrl(html) };
 }
 
 async function setPhotoRowHeight(sheets, spreadsheetId, sheetId, rowCount) {
@@ -179,10 +206,12 @@ async function main() {
 
   // ส่งแค่ index เพราะ mapConcurrentStrict พิมพ์ item ลง error message ตอนล้มเหลว
   const indexes = employees.map((_, i) => i);
+  const sharedPhotos = sharedPhotoUrls(employees);
   const details = await rocket.mapConcurrentStrict(indexes, DETAIL_CONCURRENCY, async i => {
     const employee = employees[i];
-    const detail = await fetchEmployeeDetail(auth, employee.userId);
-    assertDetailMatches(employee, detail);
+    const { detail, photoUrl } = await fetchEmployeeDetail(auth, employee.userId);
+    const photoConfirmed = Boolean(photoUrl) && photoUrl === employee.photoUrl && !sharedPhotos.has(photoUrl);
+    assertDetailMatches(employee, detail, photoConfirmed);
     return detail;
   });
 
@@ -202,5 +231,6 @@ if (require.main === module) main().catch(error => {
 });
 
 module.exports = {
-  parseEmployeeList, parseEmployeeDetail, assertDetailMatches, asText, photoFormula, toRow, HEADERS, DETAIL_FIELDS
+  parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, assertDetailMatches,
+  asText, photoFormula, toRow, HEADERS, DETAIL_FIELDS
 };
