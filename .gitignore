@@ -10,3 +10,6 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# หน้า HR ที่บันทึกไว้ตรวจโครงสร้าง — มีข้อมูลส่วนบุคคล ห้าม commit
+employee_view*.html
