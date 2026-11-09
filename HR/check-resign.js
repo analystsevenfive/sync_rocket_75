@@ -14,12 +14,12 @@ const rocket = require('../github_action/lib/rocket-client');
 const sheetsLib = require('../github_action/lib/sheets-client');
 const working = require('./sync-employee-working');
 
-const SOURCE_SPREADSHEET_ID = '18Yg6R-T5PktbTfMJLYcXVpVZI4lKPJXYe6bk_PEIr7k';
+const SOURCE_SPREADSHEET_ID = '1H2K2gSnoP1xNTqDyZ51nMFlBlrwx2Es5GDquwHPPTGE';
 const SOURCE_SHEET_GID = 0;
 const SHEET_NAME = 'Resign Check';
 const SOURCE_COLUMNS = {
   code: 'empcode', name: 'name', surname: 'surname', status: 'working status',
-  startDate: 'วันที่เริ่มงาน', lastDay: 'วันทำงานท้าย', effectiveDate: 'วันที่พ้นสภาพ'
+  startDate: 'วันที่เริ่มงาน', lastDay: 'วันทำงานสุดท้าย', effectiveDate: 'วันที่พ้นสภาพ'
 };
 const HEADERS = [
   'รหัสพนักงาน', 'ชื่อ-สกุล (ชีท HR)', 'ชื่อ-สกุล (Rocket)', 'ชื่อตรงกัน',
@@ -60,7 +60,7 @@ function findUnrecordedResignations(sourceRows, employees) {
       if (!nameMatches) issues.push('ชื่อไม่ตรงกับ Rocket');
       if (row.startDate !== employee.startDate) issues.push('วันเริ่มงานไม่ตรงกับ Rocket');
       if (!row.effectiveDate) issues.push('ไม่มีวันที่พ้นสภาพ');
-      if (!row.lastDay) issues.push('ไม่มีวันทำงานท้าย');
+      if (!row.lastDay) issues.push('ไม่มีวันทำงานสุดท้าย');
       if (workingInSheet.has(row.code)) issues.push('รหัสนี้มีแถว Working ในชีท HR ด้วย');
       return { row, employee, sheetName, nameMatches, issues };
     });

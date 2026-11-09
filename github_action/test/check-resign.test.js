@@ -4,7 +4,7 @@ const { parseSourceRows, findUnrecordedResignations, toRow, HEADERS } = require(
 
 // ข้อมูลสมมติ header ตามชีท HR จริง
 const HEADER = ['empcode', 'name', 'surname', 'orgcode', 'department', 'position', 'level',
-  'work email', 'personal email', 'working age', 'working status', 'วันที่เริ่มงาน', 'วันทำงานท้าย', 'วันที่พ้นสภาพ'];
+  'work email', 'personal email', 'working age', 'working status', 'วันที่เริ่มงาน', 'วันทำงานสุดท้าย', 'วันที่พ้นสภาพ'];
 const sheetRow = (code, status, { name = 'สมมติ', surname = 'ทดสอบ', start = '01/01/2020', last = '30/10/2026', end = '31/10/2026' } = {}) =>
   [code, name, surname, 'BK', '', '', '', '', '', '', status, start, last, end];
 const rocketEmployee = (employeeId, fullName = 'สมมติ ทดสอบ', startDate = '01/01/2020') =>
@@ -29,7 +29,7 @@ test('mismatched name, start date, missing dates and rehire are flagged for revi
   const [item] = findUnrecordedResignations(rows, [rocketEmployee('0100001')]);
   assert.equal(item.nameMatches, false);
   assert.deepEqual(item.issues, ['ชื่อไม่ตรงกับ Rocket', 'วันเริ่มงานไม่ตรงกับ Rocket',
-    'ไม่มีวันที่พ้นสภาพ', 'ไม่มีวันทำงานท้าย', 'รหัสนี้มีแถว Working ในชีท HR ด้วย']);
+    'ไม่มีวันที่พ้นสภาพ', 'ไม่มีวันทำงานสุดท้าย', 'รหัสนี้มีแถว Working ในชีท HR ด้วย']);
 });
 
 test('status and header matching ignore case and spacing', () => {
