@@ -42,7 +42,7 @@ test('employee row yields every list field', () => {
     fullName: 'สมมติ ทดสอบ', phone: '0812345678', email: 'a@example.com',
     startDate: '17/04/2002', tenure: '24 ปี 6 เดือน 21 วัน',
     positionCode: 'BK020201', position: 'เจ้าหน้าที่ขาย - อาวุโส',
-    department: 'การเงิน', company: 'บริษัทตัวอย่าง', level: '7', status: 'ใช้งาน'
+    department: 'การเงิน', company: 'บริษัทตัวอย่าง', level: '7', status: 'ใช้งาน', documents: {}
   }]);
 });
 

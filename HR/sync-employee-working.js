@@ -44,6 +44,18 @@ function cellLines(html) {
     .split('\n').map(s => s.trim()).filter(Boolean);
 }
 
+// เมนู "ไฟล์เอกสาร" ในแถว: { 'ใบปะหน้าแฟ้มประวัติ': url, ... } ลิงก์มีแค่ user_id ไม่มี token
+// ชื่อไฟล์บางตัวมีช่องว่าง (print_75Cover sheet.php) new URL จะ encode ให้
+function parseDocumentLinks(rowHtml) {
+  const links = {};
+  const item = /<a\b[^>]*class="dropdown-item"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  for (const match of String(rowHtml).matchAll(item)) {
+    const label = rocket.cleanText(match[2]);
+    if (label) links[label] = new URL(match[1], `${rocket.ROCKET_BASE}/hr/`).href;
+  }
+  return links;
+}
+
 function parseEmployeeList(html) {
   const employees = [];
   // แถบ status มี badge เก่าค้างใน comment ต้องลบก่อนอ่าน cell
@@ -72,7 +84,8 @@ function parseEmployeeList(html) {
       department: lineValue(position, 'แผนก'),
       company: lineValue(position, 'บริษัท'),
       level: position.join(' ').match(/Lv\.?\s*([\w.]+)/i)?.[1] || '',
-      status: rocket.cleanText(cells[5])
+      status: rocket.cleanText(cells[5]),
+      documents: parseDocumentLinks(tr[1])
     });
   }
   return employees;
@@ -218,13 +231,15 @@ async function loadDetails(auth, employees, sharedPhotos) {
   return details;
 }
 
-async function writeEmployeeSheet(spreadsheetId, sheetName, summaryLabel, employees, details) {
+// headers/buildRow ให้ชีทอื่นเพิ่มคอลัมน์ได้โดยไม่กระทบ Employee Working
+async function writeEmployeeSheet(spreadsheetId, sheetName, summaryLabel, employees, details,
+  { headers = HEADERS, buildRow = toRow } = {}) {
   const now = rocket.formatDateTimeBangkok(new Date());
-  const rows = employees.map((employee, i) => toRow(employee, details[i], now));
+  const rows = employees.map((employee, i) => buildRow(employee, details[i], now));
   const sheets = await sheetsLib.getSheetsClient();
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, sheetName);
   const summaryText = `ข้อมูล ณ ${now} | ${summaryLabel} ${rows.length.toLocaleString('en-US')} คน`;
-  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, sheetName, summaryText, HEADERS, rows);
+  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, sheetName, summaryText, headers, rows);
   if (rows.length) await setPhotoRowHeight(sheets, spreadsheetId, sheetId, rows.length);
   console.log(`Updated ${sheetName}: ${rows.length} rows`);
 }

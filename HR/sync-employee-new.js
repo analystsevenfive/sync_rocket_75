@@ -12,6 +12,19 @@ const rocket = require('../github_action/lib/rocket-client');
 const working = require('./sync-employee-working');
 
 const SHEET_NAME = 'Employee New';
+// ลิงก์จากเมนู "ไฟล์เอกสาร" ในหน้ารายชื่อ เปิดได้เฉพาะคนที่ login rocket75.com
+const DOCUMENT_LABELS = ['ใบปะหน้าแฟ้มประวัติ', 'Checklist ปฐมนิเทศ'];
+const PHOTO_COLUMNS = working.HEADERS.indexOf('ลิงก์รูป') + 1;
+const HEADERS = [
+  ...working.HEADERS.slice(0, PHOTO_COLUMNS), ...DOCUMENT_LABELS, ...working.HEADERS.slice(PHOTO_COLUMNS)
+];
+
+// ลิงก์เป็น URL ล้วน ไม่ผ่าน asText เพื่อให้ Sheets ทำเป็นลิงก์กดได้ เหมือนคอลัมน์ลิงก์รูป
+function toRow(employee, detail, syncedAt) {
+  const row = working.toRow(employee, detail, syncedAt);
+  const documents = DOCUMENT_LABELS.map(label => (employee.documents || {})[label] || '');
+  return [...row.slice(0, PHOTO_COLUMNS), ...documents, ...row.slice(PHOTO_COLUMNS)];
+}
 
 // dd/mm/yyyy -> เลข yyyymmdd เทียบมากน้อยได้ตรงๆ อ่านไม่ได้คืน null
 function dateKey(text) {
@@ -40,7 +53,8 @@ async function main() {
   const today = rocket.formatDateTimeBangkok(new Date());
   const newEmployees = employees.filter(employee => isNewEmployee(employee, today));
   const details = await working.loadDetails(auth, newEmployees, working.sharedPhotoUrls(employees));
-  await working.writeEmployeeSheet(spreadsheetId, SHEET_NAME, 'พนักงานใหม่', newEmployees, details);
+  await working.writeEmployeeSheet(spreadsheetId, SHEET_NAME, 'พนักงานใหม่', newEmployees, details,
+    { headers: HEADERS, buildRow: toRow });
 }
 
 if (require.main === module) main().catch(error => {
@@ -48,4 +62,4 @@ if (require.main === module) main().catch(error => {
   process.exit(1);
 });
 
-module.exports = { dateKey, isNewEmployee };
+module.exports = { dateKey, isNewEmployee, toRow, HEADERS };
