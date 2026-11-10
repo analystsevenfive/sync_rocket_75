@@ -10,14 +10,14 @@ const sheetsLib = require('../lib/sheets-client');
 // Load script functions without running a production sync or needing credentials.
 function loadScript(name, mocks = {}) {
   const file = path.join(__dirname, '..', name);
-  const source = fs.readFileSync(file, 'utf8').replace(/(?:if \(require\.main === module\)\s*)?main\(\)\.catch\([\s\S]*$/, '');
+  const source = fs.readFileSync(file, 'utf8').replace(/main\(\)\.catch\([\s\S]*$/, '');
   const context = vm.createContext({
     // สคริปต์ใน HR/ require ผ่าน ../github_action/lib/ แต่ mocks ใช้ key แบบ ./lib/
     require: rawId => {
       const id = rawId.replace('../github_action/lib/', './lib/');
       return mocks[id] || (id === './lib/rocket-client' ? rocket : {});
     },
-    module: { exports: {} }, console: { log() {}, error() {} }, process: { env: { SPREADSHEET_ID: 'test' } },
+    console: { log() {}, error() {} }, process: { env: { SPREADSHEET_ID: 'test' } },
     setTimeout, clearTimeout, Buffer, URLSearchParams
   });
   vm.runInContext(source, context, { filename: file });
