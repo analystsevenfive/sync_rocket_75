@@ -588,12 +588,9 @@ function employeeToRow(emp, lastSync) {
   ];
 }
 
-async function main() {
-  console.log('========== SYNC EMPLOYEE ORGANIZATION CHART (Node.js / GitHub Actions) ==========');
-
-  const auth = await rocket.rocketLogin();
-  console.log('LOGIN OK');
-
+// ดึงพนักงานจากผังองค์กรของทุกบริษัทในตัวเลือก เรียงตามรหัสพนักงาน
+// ใช้ร่วมกับชีทอื่น (เช่น Employee for IT) ที่ต้องการรายชื่อชุดเดียวกัน
+async function collectEmployees(auth) {
   const allEmployeesMap = new Map();
 
   // 1. ดึงหน้าหลัก organization_chart.php
@@ -645,6 +642,15 @@ async function main() {
   orderedEmployees.sort(function(a, b) {
     return (a.employeeId || '').localeCompare(b.employeeId || '');
   });
+  return orderedEmployees;
+}
+
+async function main() {
+  console.log('========== SYNC EMPLOYEE ORGANIZATION CHART (Node.js / GitHub Actions) ==========');
+
+  const auth = await rocket.rocketLogin();
+  console.log('LOGIN OK');
+  const orderedEmployees = await collectEmployees(auth);
 
   // 4. บันทึกลง Google Sheets
   const spreadsheetId = process.env.SPREADSHEET_ID;
@@ -666,7 +672,9 @@ async function main() {
   console.log('DONE');
 }
 
-main().catch(function(err) {
+module.exports = { collectEmployees, forceTextIfNumeric };
+
+if (require.main === module) main().catch(function(err) {
   console.error('Sync ล้มเหลว:', err);
   process.exit(1);
 });
