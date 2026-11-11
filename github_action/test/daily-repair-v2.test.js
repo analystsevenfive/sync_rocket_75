@@ -114,9 +114,10 @@ test('V2 writes Daily Repair Update V2 with the original columns plus GPS and ph
   assert.equal(row[1], 'BKRM01.R01');
   const extra = row.slice(baseHeaders.length);
   assert.equal(extra[0], '=HYPERLINK("https://www.google.com/maps/place/13.6692019,100.6343380","13.6692019,100.6343380")');
-  assert.match(extra[1], /^=HYPERLINK\("https:\/\/rocket75\.s3[^"]*checkin_img\/gps\.png\?[^"]*&X-Amz-Signature=abc","ดูรูป"\)$/);
-  assert.match(extra[2], /checkin_img\/selfie\.jpeg/);
-  assert.match(extra[3], /checkout_img\/workorder\.jpeg/);
+  // รูปเป็น URL ตรงๆ ไม่ใช่สูตร HYPERLINK
+  assert.equal(extra[1], `${S3}/checkin_img/gps.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=59940&X-Amz-Signature=abc`);
+  assert.match(extra[2], /^https:\/\/rocket75\.s3\S*checkin_img\/selfie\.jpeg\?/);
+  assert.match(extra[3], /^https:\/\/rocket75\.s3\S*checkout_img\/workorder\.jpeg\?/);
 });
 
 test('original Daily Repair Update sheet keeps its columns unchanged', async () => {

@@ -110,14 +110,15 @@ function hyperlinkFormula(url, label) {
 
 
 
-// รูปเป็น S3 presigned URL หมดอายุราว 16 ชม. หลังดึง — ลิงก์ใช้ได้ภายในวัน
+// รูปเขียนเป็น URL ตรงๆ (Sheets ทำเป็นลิงก์ให้เอง) — เป็น S3 presigned URL
+// หมดอายุราว 16 ชม. หลังดึง ใช้ได้ภายในวัน
 function checkinMediaCells(d) {
   const m = d.checkinMedia || {};
   return [
     m.gps ? hyperlinkFormula('https://www.google.com/maps/place/' + m.gps, m.gps) : '',
-    hyperlinkFormula(m.gpsPhotoUrl, 'ดูรูป'),
-    hyperlinkFormula(m.storefrontPhotoUrl, 'ดูรูป'),
-    hyperlinkFormula(m.workOrderPhotoUrl, 'ดูรูป')
+    m.gpsPhotoUrl || '',
+    m.storefrontPhotoUrl || '',
+    m.workOrderPhotoUrl || ''
   ];
 }
 
