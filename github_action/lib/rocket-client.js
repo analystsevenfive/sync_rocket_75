@@ -1340,6 +1340,67 @@ function extractRelatedPerson(html) {
 
 }
 
+// ดึงรูป/วิดีโอตาม label ใน <b> ของบล็อกรูปภาพเข้างาน/ออกงาน
+// (เช่น "GPS", "รูปถ่ายคู่กับหน้าร้าน", "รูปถ่ายใบงาน") -> { label: url }
+// URL เป็น S3 presigned (X-Amz-Expires ~16 ชม.) — หมดอายุหลังจากนั้น
+function extractMediaByLabel(html) {
+
+  const map = {};
+  if (!html || typeof html !== 'string') {
+    return map;
+  }
+
+  const regex = /<b>([\s\S]*?)<\/b>([\s\S]*?)(?=<b>|$)/gi;
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    const label = cleanText(m[1]);
+    if (!label || map[label]) continue;
+    const urlMatch = m[2].match(/(?:href|src)=["'](https:\/\/[^"']*amazonaws\.com\/[^"']+)["']/i);
+    if (urlMatch) {
+      map[label] = urlMatch[1].replace(/&amp;/gi, '&');
+    }
+  }
+
+  return map;
+
+}
+
+
+
+// พิกัด GPS ตอนเข้างาน — ลิงก์ google maps ข้างเวลาเข้างาน
+// (.../maps/place/<lat>,<lng>) -> "lat,lng"
+function extractCheckinGps(html) {
+
+  if (!html || typeof html !== 'string') {
+    return '';
+  }
+
+  const start = html.search(/<h5[^>]*>\s*เวลาเข้างาน\s*<\/h5>/i);
+  if (start === -1) {
+    return '';
+  }
+  const endRel = html.substring(start).search(/<h5[^>]*>\s*เวลาเสร็จงาน\s*<\/h5>/i);
+  const block = html.substring(start, endRel === -1 ? start + 3000 : start + endRel);
+
+  const m = block.match(/maps\/place\/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
+  return m ? m[1] + ',' + m[2] : '';
+
+}
+
+
+
+function parseCheckinMedia(html) {
+
+  const media = extractMediaByLabel(html);
+  return {
+    gps: extractCheckinGps(html),
+    gpsPhotoUrl: media['GPS'] || '',
+    storefrontPhotoUrl: media['รูปถ่ายคู่กับหน้าร้าน'] || '',
+    workOrderPhotoUrl: media['รูปถ่ายใบงาน'] || ''
+  };
+
+}
+
 // ตรวจสอบว่าตั๋วเป็นของสาขากรุงเทพฯ หรือไม่ (Ticket No ขึ้นต้นด้วย BK)
 function isBkTicket(ticketNo) {
   if (ticketNo === null || ticketNo === undefined) return false;
@@ -1405,6 +1466,9 @@ module.exports = {
   extractLastBreadcrumbText,
   extractRegex,
   extractTicketStatus,
+  extractMediaByLabel,
+  extractCheckinGps,
+  parseCheckinMedia,
   isBkTicket,
   hasValidTechnician
 };

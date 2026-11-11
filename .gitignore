@@ -13,3 +13,8 @@ node_modules/
 
 # หน้า HR ที่บันทึกไว้ตรวจโครงสร้าง — มีข้อมูลส่วนบุคคล ห้าม commit
 employee_view*.html
+resignation_list*.html
+resignation_list*.php
+
+# หน้า ticket detail ที่บันทึกไว้ตรวจโครงสร้าง — มีข้อมูลลูกค้า ห้าม commit
+ticket_checkrepair_view*.html

@@ -9,13 +9,18 @@
  *   Inspection Status, Sales Invoice No., Customer, Branch, Contact, Phone,
  *   Problem Reported, Product Name, Technician, Team, Serial,
  *   URL, Last Sync
+ *
+ * โหมด V2 (DAILY_REPAIR_V2=1 / sync-daily-repair-v2.js) เขียนชีท
+ * "Daily Repair Update V2" — คอลัมน์เดิมทั้งหมด + พิกัด GPS และรูปการเข้าซ่อม
+ * (ดึงจากหน้า ticket detail เดิม ไม่มี request เพิ่ม)
  *************************************************/
 
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 const workOrderReport = require('./lib/work-order-report');
 
-const SHEET_NAME = 'Daily Repair Update';
+const IS_V2 = process.env.DAILY_REPAIR_V2 === '1';
+const SHEET_NAME = IS_V2 ? 'Daily Repair Update V2' : 'Daily Repair Update';
 const DATE_TYPE_APPOINTMENT = '2';
 
 const PARENT_CONCURRENCY = 30;
@@ -48,6 +53,14 @@ const HEADERS = [
   'URL',
   'Last Sync',
   'Work Order Sent Date'
+];
+
+// คอลัมน์เพิ่มของ V2 (ต่อท้าย HEADERS)
+const V2_EXTRA_HEADERS = [
+  'GPS Coordinates',
+  'Check-in Photo (GPS)',
+  'Storefront Photo',
+  'Work Order Photo'
 ];
 
 
@@ -89,6 +102,27 @@ function jobToRow(d, lastSync) {
     d.url,
     lastSync,
     d.workOrderSentDate || ''
+  ];
+}
+
+
+
+function hyperlinkFormula(url, label) {
+  if (!url) return '';
+  const q = function(s) { return String(s).replace(/"/g, '""'); };
+  return '=HYPERLINK("' + q(url) + '","' + q(label) + '")';
+}
+
+
+
+// รูปเป็น S3 presigned URL หมดอายุราว 16 ชม. หลังดึง — ลิงก์ใช้ได้ภายในวัน
+function checkinMediaCells(d) {
+  const m = d.checkinMedia || {};
+  return [
+    m.gps ? hyperlinkFormula('https://www.google.com/maps/place/' + m.gps, m.gps) : '',
+    hyperlinkFormula(m.gpsPhotoUrl, 'ดูรูป'),
+    hyperlinkFormula(m.storefrontPhotoUrl, 'ดูรูป'),
+    hyperlinkFormula(m.workOrderPhotoUrl, 'ดูรูป')
   ];
 }
 
@@ -152,7 +186,7 @@ function extractParentToStatusesMap(html) {
 
 async function main() {
 
-  console.log('========== DAILY REPAIR UPDATE SYNC (Node.js / GitHub Actions) ==========');
+  console.log('========== ' + SHEET_NAME.toUpperCase() + ' SYNC (Node.js / GitHub Actions) ==========');
 
   const auth = await rocket.rocketLogin();
   console.log('LOGIN OK');
@@ -219,6 +253,9 @@ async function main() {
       const ticket = rocket.parseTicketDetail(html, subId);
       if (!ticket.ticketNo && !ticket.status) {
         throw new Error('หน้าที่ได้ไม่ใช่ ticket detail จริง (parse ไม่สำเร็จ)');
+      }
+      if (IS_V2) {
+        ticket.checkinMedia = rocket.parseCheckinMedia(html);
       }
       const info = infoMap[String(subId)] || (ticket.ticketNo ? infoMap[ticket.ticketNo] : null) || {};
       ticket.technician = info.technicians || ticket.technician || '';
@@ -414,10 +451,17 @@ async function main() {
 
   const lastSync = rocket.formatDateTimeBangkok(new Date());
   const rows = todayTickets.map(function(r) {
-    return jobToRow(r, lastSync);
+    const row = jobToRow(r, lastSync);
+    return IS_V2 ? row.concat(checkinMediaCells(r)) : row;
   });
+  const headers = IS_V2 ? HEADERS.concat(V2_EXTRA_HEADERS) : HEADERS;
 
-  await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, SHEET_NAME, HEADERS, rows);
+  await sheetsLib.replaceSheetData(sheets, spreadsheetId, sheetId, SHEET_NAME, headers, rows);
+
+  if (IS_V2) {
+    console.log('V2: มีพิกัด GPS ' + todayTickets.filter(function(t) { return t.checkinMedia && t.checkinMedia.gps; }).length +
+      '/' + todayTickets.length + ' ตั๋ว');
+  }
 
   console.log('เขียนแล้ว ' + rows.length + '/' + todayTickets.length + ' (เรียงตามเวลานัดหมาย เช้า ➔ เย็น)');
   console.log('DONE');
