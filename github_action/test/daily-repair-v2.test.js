@@ -54,23 +54,23 @@ test('extractCheckinGps ignores a map link that belongs to check-out', () => {
   assert.equal(rocket.extractCheckinGps(html), '');
 });
 
-function loadDailyRepair(env, mocks) {
-  const file = path.join(__dirname, '..', 'sync-daily-repair.js');
+function loadScript(name, mocks) {
+  const file = path.join(__dirname, '..', name);
   const source = fs.readFileSync(file, 'utf8').replace(/main\(\)\.catch\([\s\S]*$/, '');
   const context = vm.createContext({
     require: id => mocks[id] || (id === './lib/rocket-client' ? rocket : {}),
     console: { log() {}, error() {} },
-    process: { env: { SPREADSHEET_ID: 'test', ...env } },
+    process: { env: { SPREADSHEET_ID: 'test' } },
     setTimeout, clearTimeout, Buffer, URLSearchParams
   });
   vm.runInContext(source, context, { filename: file });
   return context;
 }
 
-async function runSync(env) {
+async function runSync(name) {
   const today = rocket.computeTodayRangeBangkok().start;
   const written = {};
-  const script = loadDailyRepair(env, {
+  const script = loadScript(name, {
     './lib/rocket-client': {
       ...rocket,
       rocketLogin: async () => ({ cookie: 'mock' }),
@@ -100,8 +100,9 @@ async function runSync(env) {
 }
 
 test('V2 writes Daily Repair Update V2 with the original columns plus GPS and photo links', async () => {
-  const { script, written } = await runSync({ DAILY_REPAIR_V2: '1' });
-  const baseHeaders = Array.from(vm.runInContext("HEADERS", script));
+  const { written } = await runSync('sync-daily-repair-v2.js');
+  // คอลัมน์เดิมต้องตรงกับชีท Daily Repair Update ทุกตัว แล้วต่อท้ายด้วย 4 คอลัมน์ใหม่
+  const baseHeaders = (await runSync('sync-daily-repair.js')).written.headers;
 
   assert.equal(written.ensured, 'Daily Repair Update V2');
   assert.equal(written.name, 'Daily Repair Update V2');
@@ -119,13 +120,13 @@ test('V2 writes Daily Repair Update V2 with the original columns plus GPS and ph
 });
 
 test('original Daily Repair Update sheet keeps its columns unchanged', async () => {
-  const { script, written } = await runSync({});
+  const { script, written } = await runSync('sync-daily-repair.js');
   assert.equal(written.name, 'Daily Repair Update');
   assert.deepEqual(Array.from(written.headers), Array.from(vm.runInContext("HEADERS", script)));
   assert.equal(written.rows[0].length, vm.runInContext("HEADERS.length", script));
 });
 
 test('checkinMediaCells leaves cells blank when there is no media', () => {
-  const script = loadDailyRepair({}, {});
+  const script = loadScript('sync-daily-repair-v2.js', {});
   assert.deepEqual(Array.from(script.checkinMediaCells({})), ['', '', '', '']);
 });

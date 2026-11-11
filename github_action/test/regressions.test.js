@@ -283,7 +283,7 @@ test('legacy Apps Script parser accepts fast links and row IDs', () => {
   assert.deepEqual(Array.from(context.extractCheckRepairIds_('<a href="ticket_checkrepair_view_fast.php?id=42">job</a><tr id="tr_43"></tr>')), ['42', '43']);
 });
 
-for (const name of ['sync-tickets.js', 'sync-trick2.js', 'sync-daily-repair.js',
+for (const name of ['sync-tickets.js', 'sync-trick2.js', 'sync-daily-repair.js', 'sync-daily-repair-v2.js',
   'sync-yesterday-jobs.js', 'sync-tomorrow-plan.js', 'sync-7day-installation-plan.js']) {
   test(name + ' refuses to publish if one parent fetch fails', async () => {
     let writes = 0;
@@ -655,7 +655,8 @@ test('Tomorrow Plan, Yesterday Jobs, and Daily Repair include Product Code colum
   const scripts = [
     { name: 'sync-tomorrow-plan.js', toRowFn: 'planToRow' },
     { name: 'sync-yesterday-jobs.js', toRowFn: 'jobToRow' },
-    { name: 'sync-daily-repair.js', toRowFn: 'jobToRow' }
+    { name: 'sync-daily-repair.js', toRowFn: 'jobToRow' },
+    { name: 'sync-daily-repair-v2.js', toRowFn: 'jobToRow' }
   ];
 
   for (const { name, toRowFn } of scripts) {
@@ -850,7 +851,7 @@ test("hasValidTechnician validates assigned technicians and excludes '-', null, 
   assert.equal(rocket.hasValidTechnician(undefined), false);
 });
 
-for (const scriptName of ['sync-tomorrow-plan.js', 'sync-yesterday-jobs.js', 'sync-daily-repair.js']) {
+for (const scriptName of ['sync-tomorrow-plan.js', 'sync-yesterday-jobs.js', 'sync-daily-repair.js', 'sync-daily-repair-v2.js']) {
   test(`${scriptName} filters tickets where ticketNo starts with BK and technician is not '-' or null`, async () => {
     let writtenRows = null;
     const targetDate = scriptName.includes('tomorrow')
