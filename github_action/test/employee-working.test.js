@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, verifyDetail,
-  asText, photoFormula, toRow, HEADERS, DETAIL_FIELDS
+  asText, photoFormula, thaiName, toRow, HEADERS, DETAIL_FIELDS
 } = require('../../HR/sync-employee-working');
 
 // ข้อมูลสมมติ โครง HTML ตาม response จริงของ getTable.php
@@ -176,4 +176,14 @@ test('photo link column holds the plain url so Sheets makes it clickable', () =>
   assert.equal(values[1], 'https://rocket75.com/images/0100001.png');
   assert.equal(values[2], "'0100001");
   assert.equal(toRow({ ...employee, photoUrl: '' }, {}, 'now')[1], '');
+});
+
+test('name column keeps only the Thai name', () => {
+  assert.equal(thaiName('อัญชสา บัวลอย Ms ANCHASA BUALOI'), 'อัญชสา บัวลอย');
+  assert.equal(thaiName('ณัฐชัย สุดธารักษ์ Ḿr Natthachai Suttharak'), 'ณัฐชัย สุดธารักษ์');
+  assert.equal(thaiName('สมมติ ทดสอบ'), 'สมมติ ทดสอบ');
+  assert.equal(thaiName('John Smith'), 'John Smith');
+  const [employee] = parseEmployeeList(table(row()));
+  const values = toRow({ ...employee, fullName: 'สมมติ ทดสอบ Mr Sample Test' }, {}, 'now');
+  assert.equal(values[HEADERS.indexOf('ชื่อ-สกุล')], "'สมมติ ทดสอบ");
 });

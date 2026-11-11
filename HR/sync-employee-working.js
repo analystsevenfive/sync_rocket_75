@@ -154,6 +154,15 @@ function photoFormula(url) {
   return url ? `=IMAGE("${url.replace(/"/g, '""')}")` : '';
 }
 
+// หน้า list ให้ชื่อไทยต่อด้วยชื่ออังกฤษ ("อัญชสา บัวลอย Ms ANCHASA BUALOI") ชีทเก็บเฉพาะไทย
+// ตัดตั้งแต่คำแรกที่เป็นอักษรละติน; ถ้าไม่มีชื่อไทยเลย (เช่นพนักงานต่างชาติ) คงชื่อเดิมไว้
+// verifyDetail ยังใช้ fullName เต็มเพื่อเทียบกับชื่ออังกฤษในหน้า detail
+function thaiName(fullName) {
+  const name = String(fullName || '').trim();
+  const thai = name.replace(/(^|\s)[A-Za-z].*$/, '').trim();
+  return /[\u0E00-\u0E7F]/.test(thai) ? thai : name;
+}
+
 function toRow(employee, detail, syncedAt) {
   // หน้า list มักไม่มีเบอร์/อีเมล แต่หน้า detail มี จึงใช้ detail เป็นหลัก
   const merged = Object.assign({}, detail, {
@@ -163,7 +172,7 @@ function toRow(employee, detail, syncedAt) {
   return [
     photoFormula(employee.photoUrl),
     employee.photoUrl, // ไม่ผ่าน asText: ให้ Sheets ทำเป็นลิงก์กดได้ และเป็น https:// เสมอ
-    ...[employee.employeeId, employee.fullName, employee.startDate, employee.tenure,
+    ...[employee.employeeId, thaiName(employee.fullName), employee.startDate, employee.tenure,
       employee.positionCode, employee.position, employee.department, employee.company,
       employee.level, employee.status,
       ...DETAIL_FIELDS.map(label => merged[label]),
@@ -263,5 +272,5 @@ if (require.main === module) main().catch(error => {
 
 module.exports = {
   parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, verifyDetail,
-  asText, photoFormula, toRow, fetchEmployeeList, loadDetails, writeEmployeeSheet, HEADERS, DETAIL_FIELDS
+  asText, photoFormula, thaiName, toRow, fetchEmployeeList, loadDetails, writeEmployeeSheet, HEADERS, DETAIL_FIELDS
 };
