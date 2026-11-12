@@ -9,7 +9,7 @@
  *   Inspection Status, Sales Invoice No., Customer, Branch, Contact, Phone,
  *   Problem Reported, Product Name, Technician, Team, Serial,
  *   URL, Last Sync, Work Order Sent Date,
- *   GPS Coordinates, Check-in Photo (GPS), Storefront Photo, Work Order Photo
+ *   GPS Coordinates, Check-in Time, Check-in Photo (GPS), Storefront Photo, Work Order Photo
  *
  * สคริปต์แยกจาก sync-daily-repair.js — คอลัมน์เดิมทั้งหมด + พิกัด GPS และรูป
  * การเข้าซ่อม (ดึงจากหน้า ticket detail เดิม ไม่มี request เพิ่ม)
@@ -53,6 +53,7 @@ const HEADERS = [
   'Last Sync',
   'Work Order Sent Date',
   'GPS Coordinates',
+  'Check-in Time',
   'Check-in Photo (GPS)',
   'Storefront Photo',
   'Work Order Photo'
@@ -116,6 +117,7 @@ function checkinMediaCells(d) {
   const m = d.checkinMedia || {};
   return [
     m.gps ? hyperlinkFormula('https://www.google.com/maps/place/' + m.gps, m.gps) : '',
+    d.startTime || '',
     m.gpsPhotoUrl || '',
     m.storefrontPhotoUrl || '',
     m.workOrderPhotoUrl || ''

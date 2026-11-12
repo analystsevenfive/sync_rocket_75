@@ -82,7 +82,7 @@ async function runSync(name) {
       extractCheckRepairIds: () => ['101'],
       extractCheckRepairInfo: () => ({ '101': { technicians: 'ช่างหนึ่ง', team: 'A' } }),
       getTicketDetailHtml: async () => DETAIL_HTML,
-      parseTicketDetail: () => ({ ticketId: '101', ticketNo: 'BKRM01.R01', appointment: `${today} 09:00`, status: 'กำลังทำ', technician: 'ช่างหนึ่ง' }),
+      parseTicketDetail: () => ({ ticketId: '101', ticketNo: 'BKRM01.R01', appointment: `${today} 09:00`, startTime: '10/11/2026 09:02', status: 'กำลังทำ', technician: 'ช่างหนึ่ง' }),
       getInspectorModalHtml: async () => '',
       parseInspectorModal: () => ({ status: '', type: 'งานซ่อม' }),
       getModalProductHtml: async () => '',
@@ -99,25 +99,26 @@ async function runSync(name) {
   return { script, written };
 }
 
-test('V2 writes Daily Repair Update V2 with the original columns plus GPS and photo links', async () => {
+test('V2 writes Daily Repair Update V2 with check-in time after GPS and photo links', async () => {
   const { written } = await runSync('sync-daily-repair-v2.js');
-  // คอลัมน์เดิมต้องตรงกับชีท Daily Repair Update ทุกตัว แล้วต่อท้ายด้วย 4 คอลัมน์ใหม่
+  // คอลัมน์เดิมต้องตรงกับชีท Daily Repair Update ทุกตัว แล้วต่อท้ายด้วย 5 คอลัมน์ใหม่
   const baseHeaders = (await runSync('sync-daily-repair.js')).written.headers;
 
   assert.equal(written.ensured, 'Daily Repair Update V2');
   assert.equal(written.name, 'Daily Repair Update V2');
   assert.deepEqual(Array.from(written.headers), [...baseHeaders,
-    'GPS Coordinates', 'Check-in Photo (GPS)', 'Storefront Photo', 'Work Order Photo']);
+    'GPS Coordinates', 'Check-in Time', 'Check-in Photo (GPS)', 'Storefront Photo', 'Work Order Photo']);
 
   const row = written.rows[0];
   assert.equal(row.length, written.headers.length);
   assert.equal(row[1], 'BKRM01.R01');
   const extra = row.slice(baseHeaders.length);
   assert.equal(extra[0], '=HYPERLINK("https://www.google.com/maps/place/13.6692019,100.6343380","13.6692019,100.6343380")');
+  assert.equal(extra[1], '10/11/2026 09:02');
   // รูปเป็น URL ตรงๆ ไม่ใช่สูตร HYPERLINK
-  assert.equal(extra[1], `${S3}/checkin_img/gps.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=59940&X-Amz-Signature=abc`);
-  assert.match(extra[2], /^https:\/\/rocket75\.s3\S*checkin_img\/selfie\.jpeg\?/);
-  assert.match(extra[3], /^https:\/\/rocket75\.s3\S*checkout_img\/workorder\.jpeg\?/);
+  assert.equal(extra[2], `${S3}/checkin_img/gps.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=59940&X-Amz-Signature=abc`);
+  assert.match(extra[3], /^https:\/\/rocket75\.s3\S*checkin_img\/selfie\.jpeg\?/);
+  assert.match(extra[4], /^https:\/\/rocket75\.s3\S*checkout_img\/workorder\.jpeg\?/);
 });
 
 test('original Daily Repair Update sheet keeps its columns unchanged', async () => {
@@ -129,5 +130,5 @@ test('original Daily Repair Update sheet keeps its columns unchanged', async () 
 
 test('checkinMediaCells leaves cells blank when there is no media', () => {
   const script = loadScript('sync-daily-repair-v2.js', {});
-  assert.deepEqual(Array.from(script.checkinMediaCells({})), ['', '', '', '']);
+  assert.deepEqual(Array.from(script.checkinMediaCells({})), ['', '', '', '', '']);
 });
