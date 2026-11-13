@@ -227,9 +227,16 @@ function wcParseWarningRows_(html) {
   const dataUpdate = new Date();
 
   while ((rowMatch = rowRegex.exec(bodyMatch[1])) !== null) {
-    const cells = wcExtractCells_(rowMatch[1]);
-    if (cells.length === 0) continue;
-    if (cells.length < 8) throw new Error('โครงสร้างแถวใบเตือนไม่ครบ 8 คอลัมน์');
+    const rawCells = wcExtractCells_(rowMatch[1]);
+    if (rawCells.length === 0) continue;
+    if (rawCells.length < 8) {
+      throw new Error('โครงสร้างแถวใบเตือนไม่ครบ 8 คอลัมน์ | ' + wcDescribeCells_(rawCells));
+    }
+    // บางแถวมี <td> เกินมาตรงกลาง (หลังเลขใบเตือน) จึงยึด 3 คอลัมน์แรกจากหน้า
+    // และ 5 คอลัมน์สุดท้าย (ประเภท, เรื่อง, ผู้รับ, สถานะ, จัดการ) จากท้ายแถว
+    const cells = rawCells.length === 8
+      ? rawCells
+      : rawCells.slice(0, 3).concat(rawCells.slice(-5));
 
     const dateAndIssuer = wcExtractTagTexts_(cells[1], 'div');
     const warningNumber = wcFirstTagText_(cells[2], 'span');
@@ -241,10 +248,8 @@ function wcParseWarningRows_(html) {
     const status = wcFirstTagText_(cells[6], 'span');
     const actionHtml = cells[7];
 
-    const idMatch = actionHtml.match(/[?&]id=(\d+)/i) ||
-      actionHtml.match(/(?:ModalApprove|ModalCopySignLink|Delete)\(\s*["'](\d+)["']/i);
+    const rawId = wcExtractRawId_(actionHtml);
     const typeMatch = actionHtml.match(/[?&](?:amp;)?type=(\d+)/i);
-    const rawId = idMatch ? idMatch[1] : '';
     const typeId = typeMatch ? typeMatch[1] : '';
 
     const dateText = dateAndIssuer[0] || '';
@@ -252,7 +257,13 @@ function wcParseWarningRows_(html) {
     const recipientName = recipient[0] || '';
     const employeeCode = recipient[1] || '';
 
-    if (!rawId) throw new Error('พบแถวที่ไม่มีรหัส id ดิบในคอลัมน์จัดการ');
+    if (!rawId) {
+      throw new Error(
+        'พบแถวที่ไม่มีรหัส id ดิบในคอลัมน์จัดการ | เลขใบเตือน ' + (warningNumber || '-') +
+        ' | ' + wcDescribeCells_(rawCells) +
+        ' | HTML จัดการ: ' + String(actionHtml).replace(/\s+/g, ' ').trim().slice(0, 300)
+      );
+    }
     if (!dateText || !warningNumber) {
       throw new Error('รายการ id ' + rawId + ' ไม่มีวันที่ออกหรือเลขใบเตือน');
     }
@@ -278,6 +289,22 @@ function wcParseWarningRows_(html) {
   }
 
   return rows;
+}
+
+/** สรุปจำนวน <td> และข้อความสั้นๆ ของแต่ละช่อง ไว้ใช้ใน error message */
+function wcDescribeCells_(cells) {
+  return 'พบ ' + cells.length + ' ช่อง: ' + cells.map(function(cell, i) {
+    return '[' + i + '] ' + wcHtmlToText_(cell).slice(0, 40);
+  }).join(' / ');
+}
+
+/** หา id ดิบจากคอลัมน์จัดการ: ลิงก์ ?id=, data-id, หรือฟังก์ชัน onclick ที่รับเลขตัวแรก */
+function wcExtractRawId_(actionHtml) {
+  const html = String(actionHtml || '');
+  const match = html.match(/[?&](?:amp;)?id=(\d+)/i) ||
+    html.match(/\bdata-(?:id|warning-id|warning_card_id)\s*=\s*["']?(\d+)/i) ||
+    html.match(/\b[A-Za-z_$][\w$]*\(\s*["']?(\d+)["']?\s*[,)]/);
+  return match ? match[1] : '';
 }
 
 function wcExtractWarningLevel_(subjectText) {
@@ -389,6 +416,8 @@ function wcWriteSnapshot_(rows, range) {
 
   wcFormatSheet_(sheet, rows.length);
   SpreadsheetApp.flush();
+  console.log('เขียนลงไฟล์: ' + spreadsheet.getName() + ' | ชีต: ' + sheet.getName() +
+    ' | ' + spreadsheet.getUrl() + '#gid=' + sheet.getSheetId());
 }
 
 function wcFormatSheet_(sheet, dataRowCount) {
