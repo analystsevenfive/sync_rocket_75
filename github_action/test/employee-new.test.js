@@ -39,6 +39,9 @@ function listHtml(menu) {
 }
 const MENU = `
   <li><a class="dropdown-item"
+      href="../print/print_announce_new_employee.php?user_id=0123456789"
+      target="_blank"><label>ประกาศพนักงานเริ่มงานใหม่</label></a></li>
+  <li><a class="dropdown-item"
       href="../print/print_75Cover sheet.php?user_id=0123456789"
       target="_blank"><label>ใบปะหน้าแฟ้มประวัติ</label></a></li>
   <li><a class="dropdown-item"
@@ -48,6 +51,7 @@ const MENU = `
 test('document menu links are read with absolute, encoded urls', () => {
   const [employee] = working.parseEmployeeList(listHtml(MENU));
   assert.deepEqual(employee.documents, {
+    'ประกาศพนักงานเริ่มงานใหม่': 'https://rocket75.com/print/print_announce_new_employee.php?user_id=0123456789',
     'ใบปะหน้าแฟ้มประวัติ': 'https://rocket75.com/print/print_75Cover%20sheet.php?user_id=0123456789',
     'Checklist ปฐมนิเทศ': 'https://rocket75.com/print/print_checklist_orientation.php?id=0123456789'
   });
@@ -57,18 +61,19 @@ test('document columns follow the photo link and hold plain urls', () => {
   const [employee] = working.parseEmployeeList(listHtml(MENU));
   const values = toRow(employee, {}, 'now');
   assert.equal(values.length, HEADERS.length);
-  assert.deepEqual(HEADERS.slice(0, 5), ['รูป', 'ลิงก์รูป', 'ใบปะหน้าแฟ้มประวัติ', 'Checklist ปฐมนิเทศ', 'รหัสพนักงาน']);
-  assert.equal(values[2], employee.documents['ใบปะหน้าแฟ้มประวัติ']);
-  assert.equal(values[3], employee.documents['Checklist ปฐมนิเทศ']);
-  assert.equal(values[4], "'0100001");
+  assert.deepEqual(HEADERS.slice(0, 6),
+    ['รูป', 'ลิงก์รูป', 'ประกาศพนักงานเริ่มงานใหม่', 'ใบปะหน้าแฟ้มประวัติ', 'Checklist ปฐมนิเทศ', 'รหัสพนักงาน']);
+  assert.equal(values[2], employee.documents['ประกาศพนักงานเริ่มงานใหม่']);
+  assert.equal(values[3], employee.documents['ใบปะหน้าแฟ้มประวัติ']);
+  assert.equal(values[4], employee.documents['Checklist ปฐมนิเทศ']);
+  assert.equal(values[5], "'0100001");
   assert.equal(values[HEADERS.indexOf('Last Sync')], "'now");
 });
 
 test('employee without the document menu gets blank document cells', () => {
   const [employee] = working.parseEmployeeList(listHtml(''));
   const values = toRow(employee, {}, 'now');
-  assert.equal(values[2], '');
-  assert.equal(values[3], '');
+  assert.deepEqual(values.slice(2, 5), ['', '', '']);
 });
 
 test('Employee Working keeps its columns without document links', () => {

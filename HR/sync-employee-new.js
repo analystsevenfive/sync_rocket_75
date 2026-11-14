@@ -13,7 +13,7 @@ const working = require('./sync-employee-working');
 
 const SHEET_NAME = 'Employee New';
 // ลิงก์จากเมนู "ไฟล์เอกสาร" ในหน้ารายชื่อ เปิดได้เฉพาะคนที่ login rocket75.com
-const DOCUMENT_LABELS = ['ใบปะหน้าแฟ้มประวัติ', 'Checklist ปฐมนิเทศ'];
+const DOCUMENT_LABELS = ['ประกาศพนักงานเริ่มงานใหม่', 'ใบปะหน้าแฟ้มประวัติ', 'Checklist ปฐมนิเทศ'];
 const PHOTO_COLUMNS = working.HEADERS.indexOf('ลิงก์รูป') + 1;
 const HEADERS = [
   ...working.HEADERS.slice(0, PHOTO_COLUMNS), ...DOCUMENT_LABELS, ...working.HEADERS.slice(PHOTO_COLUMNS)
