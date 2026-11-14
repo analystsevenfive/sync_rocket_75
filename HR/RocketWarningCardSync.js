@@ -18,7 +18,13 @@ const WC_CONFIG = Object.freeze({
   USERNAME_PROPERTY: 'ROCKET_USERNAME',
   PASSWORD_PROPERTY: 'ROCKET_PASSWORD',
   TABLE_PATH: '/hr/ajax/warning_card/Table.php',
-  REFERER_PATH: '/hr/warning_card.php'
+  REFERER_PATH: '/hr/warning_card.php',
+  // ผู้รับเหล่านี้ไม่เอาใบที่ออกก่อนวันที่กำหนด (เทียบชื่อจริง ไม่รวมคำนำหน้า)
+  RECIPIENT_START_DATES: Object.freeze({
+    'ปรัชญา': '16/03/2026',
+    'นฤมล': '16/03/2026',
+    'หยกเพชร': '16/03/2026'
+  })
 });
 
 const WC_HEADERS = Object.freeze([
@@ -51,8 +57,9 @@ function syncRocketWarningCard() {
     const session = wcLogin_(credentials.username, credentials.password);
     const range = wcGetWarningRange_();
     const html = wcFetchWarningTable_(session, range.startDate, range.endDate);
-    const rows = wcParseWarningRows_(html);
+    const rows = wcExcludeEarlyRecipients_(wcParseWarningRows_(html));
     wcValidateUniqueIds_(rows);
+    wcFillLevelsFromPrint_(rows, session);
     wcWriteSnapshot_(rows, range);
 
     const summary = 'Warning Card sync สำเร็จ | ช่วง ' + range.startDate +
@@ -291,6 +298,224 @@ function wcParseWarningRows_(html) {
   return rows;
 }
 
+/** ตัดใบเตือนของผู้รับใน RECIPIENT_START_DATES ที่วันที่ออกก่อนวันที่กำหนด */
+function wcExcludeEarlyRecipients_(rows) {
+  const cutoffs = Object.create(null);
+  Object.keys(WC_CONFIG.RECIPIENT_START_DATES).forEach(function(name) {
+    cutoffs[name] = wcParseThaiDate_(WC_CONFIG.RECIPIENT_START_DATES[name]).getTime();
+  });
+
+  const kept = rows.filter(function(row) {
+    const firstName = String(row[7] || '').trim()
+      .replace(/^(นางสาว|นาง|นาย|น\.ส\.)\s*/, '')
+      .split(/\s+/)[0];
+    const cutoff = cutoffs[firstName];
+    return cutoff === undefined || row[1].getTime() >= cutoff;
+  });
+
+  if (kept.length !== rows.length) {
+    console.log('ตัดใบเตือนก่อนวันเริ่มของผู้รับที่กำหนด: ' + (rows.length - kept.length) + ' รายการ');
+  }
+  return kept;
+}
+
+/**
+ * แถวที่ "เรื่อง" ไม่บอกระดับการตักเตือน ให้เปิดหน้าพิมพ์ใบเตือน (คอลัมน์ลิงก์ PDF)
+ * แล้วอ่านหัวเอกสาร เช่น "หนังสือเตือนภายใน"
+ * - ใช้ค่าที่เคยอ่านได้ในชีตเดิมก่อน (ระดับของใบที่ออกแล้วไม่เปลี่ยน) จะได้ไม่โหลดซ้ำทุกรอบ
+ * - ถ้าอ่านไม่ได้จะปล่อยว่างและ log ไว้ ไม่ทำให้ sync ทั้งรอบล้ม
+ */
+function wcFillLevelsFromPrint_(rows, session) {
+  const ID_COL = 0;
+  const LEVEL_COL = 6;
+  const PDF_COL = 10;
+
+  const missing = rows.filter(function(row) { return !row[LEVEL_COL] && row[PDF_COL]; });
+  if (missing.length === 0) return;
+
+  const cached = wcReadExistingLevels_();
+  const toFetch = [];
+  missing.forEach(function(row) {
+    const known = cached[String(row[ID_COL])];
+    if (known) row[LEVEL_COL] = known;
+    else toFetch.push(row);
+  });
+
+  const headers = {
+    Referer: WC_CONFIG.BASE_URL + WC_CONFIG.REFERER_PATH,
+    'User-Agent': 'Mozilla/5.0 (compatible; GoogleAppsScript)'
+  };
+  if (session.cookie) headers.Cookie = session.cookie;
+
+  // โหลด + OCR ทีละใบ (rocket75 ไม่รับ fetchAll แบบขนาน -> "Address unavailable")
+  // และจำกัดเวลารวม ใบที่เหลือจะไปทำต่อรอบหน้า เพราะใบที่อ่านได้แล้วถูกเก็บในชีต
+  const TIME_BUDGET_MS = 3 * 60 * 1000;
+  const startedAt = Date.now();
+  let filled = 0;
+  let skipped = 0;
+  const failed = [];
+  for (let i = 0; i < toFetch.length; i++) {
+    if (Date.now() - startedAt > TIME_BUDGET_MS) {
+      skipped = toFetch.length - i;
+      break;
+    }
+    const row = toFetch[i];
+    let reason;
+    try {
+      const response = UrlFetchApp.fetch(row[PDF_COL], {
+        method: 'get',
+        headers: headers,
+        followRedirects: false,
+        muteHttpExceptions: true
+      });
+      reason = wcReadLevelFromPrint_(response, row);
+    } catch (error) {
+      reason = error.message;
+    }
+    if (reason) failed.push(row[3] + ' (' + reason + ')');
+    else filled++;
+  }
+
+  console.log(
+    'ระดับการตักเตือนจากหน้าพิมพ์: ใช้ค่าเดิม ' + (missing.length - toFetch.length) +
+    ' | อ่านใหม่ได้ ' + filled + ' | อ่านไม่ได้ ' + failed.length +
+    (skipped ? ' | เหลือไว้รอบหน้า ' + skipped : '')
+  );
+  if (failed.length) console.warn('อ่านระดับจากหน้าพิมพ์ไม่ได้: ' + failed.slice(0, 20).join(', '));
+}
+
+/** คืนข้อความเหตุผลถ้าอ่านไม่ได้, คืน '' ถ้าเติมระดับลง row สำเร็จ */
+function wcReadLevelFromPrint_(response, row) {
+  const http = response.getResponseCode();
+  if (http !== 200) return 'HTTP ' + http;
+
+  const contentType = String(response.getHeaders()['Content-Type'] ||
+    response.getHeaders()['content-type'] || '');
+  const bytes = response.getContent();
+  const isPdf = /pdf/i.test(contentType) ||
+    (bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46);
+
+  // หน้าพิมพ์ของ rocket75 เป็น PDF (FPDF) ที่ฟอนต์ไทยไม่มี ToUnicode
+  // จึงต้องให้ Google Drive OCR เป็นข้อความก่อน
+  // เก็บการขึ้นบรรทัดไว้ เพราะหัวเอกสารหาจากบรรทัด
+  const text = isPdf
+    ? wcOcrPdfText_(response.getBlob().setName('warning_' + row[0] + '.pdf'))
+    : String(response.getContentText('UTF-8'))
+      .replace(/<head\b[\s\S]*?<\/head>/gi, ' ')
+      .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
+      .split(/<br\s*\/?>|<\/(?:p|div|h\d|tr|li|center)>/i)
+      .map(wcHtmlToText_)
+      .join('\n');
+
+  const level = wcExtractLevelFromPrintText_(text) || wcExtractDocumentTitle_(text);
+  if (!level) {
+    return 'ไม่พบหัวเอกสาร | ข้อความต้นเอกสาร: ' +
+      String(text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  }
+  row[6] = level;
+  return '';
+}
+
+/**
+ * OCR PDF ด้วย Advanced Drive Service: อัปโหลดเป็น Google Doc ชั่วคราว อ่านข้อความ แล้วลบทิ้ง
+ * ต้องเปิด "บริการ" > Drive API ในโปรเจกต์ Apps Script ก่อน
+ */
+function wcOcrPdfText_(blob) {
+  if (typeof Drive === 'undefined') {
+    throw new Error('ยังไม่ได้เปิด Advanced Service "Drive API" ในโปรเจกต์ Apps Script');
+  }
+  let fileId;
+  try {
+    if (typeof Drive.Files.create === 'function') {
+      fileId = Drive.Files.create(
+        { name: blob.getName(), mimeType: 'application/vnd.google-apps.document' },
+        blob,
+        { ocrLanguage: 'th' }
+      ).id;
+    } else {
+      fileId = Drive.Files.insert(
+        { title: blob.getName(), mimeType: 'application/vnd.google-apps.document' },
+        blob,
+        { ocr: true, ocrLanguage: 'th' }
+      ).id;
+    }
+    return DocumentApp.openById(fileId).getBody().getText();
+  } finally {
+    if (fileId) {
+      try {
+        Drive.Files.remove(fileId);
+      } catch (error) {
+        try { DriveApp.getFileById(fileId).setTrashed(true); } catch (ignored) {}
+      }
+    }
+  }
+}
+
+/**
+ * หาระดับการตักเตือนจากข้อความในใบเตือน
+ * 1) ประโยคในเนื้อความ เช่น "ออก หนังสือเตือนภายใน ครั้งที่ 1" (มีครั้งที่)
+ * 2) หัวเอกสาร เช่น "หนังสือเตือนภายใน"
+ * OCR ภาษาไทยมักแทรกช่องว่างกลางคำ จึงยอมให้มีช่องว่างได้
+ */
+function wcExtractLevelFromPrintText_(rawText) {
+  const text = String(rawText || '').replace(/[​ ]/g, ' ');
+  const KNOWN = '(ภายใน|ด้วยวาจา|เป็นลายลักษณ์อักษร|ครั้งสุดท้าย)';
+  const sp = '\\s*';
+  const head = 'หนังสือ' + sp + '(?:ตัก' + sp + ')?เตือน' + sp;
+  const toPlain = function(s) { return String(s).replace(/\s+/g, ''); };
+
+  const withTimes = text.match(new RegExp(head + wcSpacedWord_(KNOWN) + sp + 'ครั้ง' + sp + 'ที่' + sp + '(\\d+)'));
+  if (withTimes) return 'หนังสือตักเตือน' + toPlain(withTimes[1]) + ' ครั้งที่ ' + withTimes[2];
+
+  const known = text.match(new RegExp(head + wcSpacedWord_(KNOWN)));
+  if (known) return 'หนังสือตักเตือน' + toPlain(known[1]);
+
+  const other = text.match(/หนังสือ(?:ตัก)?เตือน([ก-๙]+)/);
+  return other ? 'หนังสือตักเตือน' + other[1] : '';
+}
+
+/**
+ * เอกสารที่ไม่ใช่หนังสือเตือน (เช่น "บันทึกความเสียหาย") ใช้หัวเอกสารแทนระดับ
+ * หัวเอกสารคือบรรทัดภาษาไทยบรรทัดแรกที่ไม่ใช่ เลขที่/หน้า/วันที่/เรื่อง/เรียน
+ * OCR มักแทรกช่องว่างระหว่างตัวอักษรไทย จึงลบช่องว่างที่อยู่ระหว่างอักษรไทยออก
+ */
+function wcExtractDocumentTitle_(rawText) {
+  const SKIP = /^(เลขที่|หน้า|วันที่|เรื่อง|เรียน|อ้างถึง|สิ่งที่ส่งมาด้วย)/;
+  const lines = String(rawText || '').replace(/[​ ]/g, ' ').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].replace(/\s+/g, ' ').trim()
+      .replace(/([ก-๙])\s+(?=[ก-๙])/g, '$1');
+    if (!/[ก-๙]/.test(line) || line.length > 60) continue;
+    if (SKIP.test(line.replace(/\s+/g, ''))) continue;
+    return line;
+  }
+  return '';
+}
+
+/** แปลง (คำ1|คำ2) เป็น regex ที่ยอมให้มีช่องว่างระหว่างตัวอักษร */
+function wcSpacedWord_(group) {
+  const words = group.replace(/^\(|\)$/g, '').split('|');
+  return '(' + words.map(function(w) { return w.split('').join('\\s*'); }).join('|') + ')';
+}
+
+/** อ่าน id -> ระดับการตักเตือน จากชีตเดิม (ข้ามแถวที่ว่าง) */
+function wcReadExistingLevels_() {
+  const map = Object.create(null);
+  try {
+    const sheet = SpreadsheetApp.openById(WC_CONFIG.SPREADSHEET_ID).getSheetByName(WC_CONFIG.SHEET_NAME);
+    if (!sheet || sheet.getLastRow() < 3) return map;
+    const values = sheet.getRange(3, 1, sheet.getLastRow() - 2, 7).getValues();
+    values.forEach(function(v) {
+      const id = String(v[0]).trim();
+      const level = String(v[6]).trim();
+      if (id && level) map[id] = level;
+    });
+  } catch (error) {
+    console.warn('อ่านระดับเดิมจากชีตไม่ได้: ' + error.message);
+  }
+  return map;
+}
+
 /** สรุปจำนวน <td> และข้อความสั้นๆ ของแต่ละช่อง ไว้ใช้ใน error message */
 function wcDescribeCells_(cells) {
   return 'พบ ' + cells.length + ' ช่อง: ' + cells.map(function(cell, i) {
@@ -309,12 +534,14 @@ function wcExtractRawId_(actionHtml) {
 
 function wcExtractWarningLevel_(subjectText) {
   const subject = String(subjectText || '').trim();
-  const match = subject.match(/(หนังสือตักเตือน.*?ครั้งที่\s*\d+)\s*$/i);
+  // rocket75 ใช้ทั้ง "หนังสือตักเตือน..." และ "หนังสือเตือน..." จึงรับทั้งสองแบบ
+  // แล้วปรับเป็น "หนังสือตักเตือน" ให้กรองในชีตได้ง่าย
+  const match = subject.match(/หนังสือ(?:ตัก)?เตือน(.*?ครั้งที่\s*\d+)\s*$/i);
   if (!match) return { subject: subject, warningLevel: '' };
 
   return {
     subject: subject,
-    warningLevel: match[1].trim()
+    warningLevel: ('หนังสือตักเตือน' + match[1]).replace(/\s+/g, ' ').trim()
   };
 }
 

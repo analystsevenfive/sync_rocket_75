@@ -553,6 +553,41 @@ test('HR snapshot keeps old values when the replacement fails', () => {
   assert.equal(cleared, false);
 });
 
+test('warning card level falls back to the print document title', () => {
+  const context = vm.createContext({});
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../HR/RocketWarningCardSync.js'), 'utf8'), context);
+  const memo = 'เลขที่ HR.011/2026\nหน้า 1/2\nบันทึก ความ เสียหาย\nวันที่ 18/04/2026\n' +
+    'เรื่อง ประตูออฟฟิศบริษัท โดนรถชนทำให้เกิดความเสียหาย\nเรียน';
+  assert.equal(context.wcExtractLevelFromPrintText_(memo), '');
+  assert.equal(context.wcExtractDocumentTitle_(memo), 'บันทึกความเสียหาย');
+  const warning = 'เลขที่ HR.001/2026\nหนังสือเตือนภายใน\nออก หนังสือเตือนภายใน ครั้งที่ 1';
+  assert.equal(context.wcExtractLevelFromPrintText_(warning), 'หนังสือตักเตือนภายใน ครั้งที่ 1');
+  assert.equal(context.wcExtractDocumentTitle_('เลขที่ HR.1\nวันที่ 1/1/2026'), '');
+});
+
+test('warning card drops listed recipients before their start date only', () => {
+  const Utilities = { parseDate: text => {
+    const [d, m, y] = text.split('/').map(Number);
+    return new Date(y, m - 1, d);
+  } };
+  const context = vm.createContext({ Utilities, console: { log() {} } });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../HR/RocketWarningCardSync.js'), 'utf8'), context);
+  const row = (id, date, recipient) => {
+    const r = Array(12).fill('');
+    r[0] = id; r[1] = Utilities.parseDate(date); r[7] = recipient;
+    return r;
+  };
+  const kept = context.wcExcludeEarlyRecipients_([
+    row('1', '15/03/2026', 'นางสาวนฤมล ทดสอบ'),
+    row('2', '16/03/2026', 'นฤมล ทดสอบ'),
+    row('3', '01/01/2026', 'ปรัชญา ทดสอบ'),
+    row('4', '01/01/2026', 'หยกเพชร ทดสอบ'),
+    row('5', '01/01/2026', 'สมชาย ทดสอบ'),
+    row('6', '01/01/2026', 'นฤมลพร ทดสอบ')
+  ]);
+  assert.deepEqual(kept.map(r => r[0]), ['2', '5', '6']);
+});
+
 test('installation plan accepts Thai and ISO appointment dates', () => {
   const script = loadScript('sync-7day-installation-plan.js');
   for (const text of ['9 ก.ย. 2569 08:00', '2026-09-09 08:00', '09/09/2026 08:00', '09.09.2026 08.00น.']) {
