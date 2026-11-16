@@ -136,6 +136,17 @@ function memoFileFieldHints(html) {
   return hints;
 }
 
+function memoApprovalHints(html) {
+  const text = String(html || '');
+  const fieldNames = [...text.matchAll(/<(?:input|select|textarea)\b[^>]*(?:name|id)=["']([^"']+)["'][^>]*>/gi)]
+    .map(match => match[1])
+    .filter(name => /approv|confirm|status|user|staff|boss|head/i.test(name));
+  const labels = [...text.matchAll(/.{0,100}(?:อนุมัติ|ผู้อนุมัติ|approve|approval|confirm).{0,140}/gi)]
+    .map(match => rocket.cleanText(match[0]).replace(/\b\d{6,}\b/g, '<id>'))
+    .filter(Boolean);
+  return { fieldNames: [...new Set(fieldNames)].slice(0, 50), labels: [...new Set(labels)].slice(0, 20) };
+}
+
 async function fetchMemoTable(auth, range) {
   const headers = { Cookie: auth.cookie, Origin: rocket.ROCKET_BASE,
     Referer: `${rocket.ROCKET_BASE}/main/memo_list.php`, 'X-Requested-With': 'XMLHttpRequest' };
@@ -192,6 +203,7 @@ async function approvalStatus(memo, auth) {
           memoDiagnosticLogged = true;
           console.log('Memo detail endpoint hints: ' + JSON.stringify(memoEndpointHints(html)));
           console.log('Memo file field hints: ' + JSON.stringify(memoFileFieldHints(html)));
+          console.log('Memo approval hints: ' + JSON.stringify(memoApprovalHints(html)));
         }
       }
     } catch (error) {
