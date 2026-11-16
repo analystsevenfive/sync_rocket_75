@@ -78,11 +78,14 @@ function extractMemoRows(html) {
     const links = [...tr[1].matchAll(/href=["']([^"']+)["']/gi)]
       .map(match => new URL(match[1], `${rocket.ROCKET_BASE}/main/`).href);
     const editUrl = links.find(link => /memo_edit\.php\?/i.test(link)) || '';
-    const pdfUrl = links.find(link => /(?:memo_print|print_memo|memo_pdf)\.php\?|\.pdf(?:\?|$)/i.test(link)) || '';
+    const pdfUrl = links.find(link => /(?:75_memo|memo_print|print_memo|memo_pdf)\.php\?|\.pdf(?:\?|$)/i.test(link)) || '';
+    const memoId = editUrl.match(/[?&]id=([^&#]+)/i)?.[1] || '';
+    const printUrl = memoId
+      ? `${rocket.ROCKET_BASE}/print/75_memo.php?id=${encodeURIComponent(decodeURIComponent(memoId))}` : pdfUrl;
     rows.push({ subject: rocket.cleanText(cells[0]), detail,
       creator: creator.filter(s => s !== createdAt).join(' '), createdAt,
       refs, technicians: rocket.cleanText(cells[4]), file,
-      url: editUrl || pdfUrl, pdfUrl });
+      url: printUrl, editUrl, pdfUrl: printUrl });
   }
   return rows;
 }
@@ -160,6 +163,7 @@ async function fetchMemoTable(auth, range) {
 
 async function approvalStatus(memo, auth) {
   const headers = { Cookie: auth.cookie, Referer: `${rocket.ROCKET_BASE}/main/memo_list.php` };
+  const detailUrl = memo.editUrl || memo.url;
   const candidates = [];
   const add = values => values.filter(Boolean).forEach(value => {
     if (!candidates.includes(value)) candidates.push(value);
@@ -167,27 +171,27 @@ async function approvalStatus(memo, auth) {
   add([memo.pdfUrl]);
   let imageResult = 'no-sticker';
 
-  if (memo.url) {
+  if (detailUrl) {
     add([
-      memo.url.replace(/memo_edit\.php/i, 'memo_print.php'),
-      memo.url.replace(/memo_edit\.php/i, 'print_memo.php')
+      detailUrl.replace(/memo_edit\.php/i, 'memo_print.php'),
+      detailUrl.replace(/memo_edit\.php/i, 'print_memo.php')
     ]);
     try {
-      const detail = await rocket.fetchWithTimeout(memo.url, { headers });
+      const detail = await rocket.fetchWithTimeout(detailUrl, { headers });
       if (detail.ok) {
         const html = await detail.text();
-        add(memoPdfCandidates(html, memo.url));
-        add(memoApprovalEvidenceCandidates(html, memo.url));
+        add(memoPdfCandidates(html, detailUrl));
+        add(memoApprovalEvidenceCandidates(html, detailUrl));
       }
     } catch (error) {
-      console.log(`Memo detail lookup failed for ${memo.url}: ${error.message}`);
+      console.log(`Memo detail lookup failed for ${detailUrl}: ${error.message}`);
     }
   }
 
   for (let i = 0; i < candidates.length; i++) {
     const url = candidates[i];
     try {
-      const response = await rocket.fetchWithTimeout(url, { headers: { ...headers, Referer: memo.url || headers.Referer } });
+      const response = await rocket.fetchWithTimeout(url, { headers: { ...headers, Referer: detailUrl || headers.Referer } });
       if (!response.ok) continue;
       const buffer = Buffer.from(await response.arrayBuffer());
       if (buffer.subarray(0, 5).toString('latin1') === '%PDF-') {
