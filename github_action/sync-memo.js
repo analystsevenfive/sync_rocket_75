@@ -99,6 +99,20 @@ function tableFromResponse(body) {
   return body;
 }
 
+function memoPdfCandidates(html, baseUrl) {
+  const values = [];
+  const decoded = String(html || '').replace(/&amp;/gi, '&');
+  for (const match of decoded.matchAll(/(?:href|src|action)\s*=\s*["']([^"']+)["']/gi)) {
+    values.push(match[1]);
+  }
+  for (const match of decoded.matchAll(/["']([^"'<>]*(?:memo[^"'<>]*print|print[^"'<>]*memo|\.pdf(?:\?[^"'<>]*)?)[^"'<>]*)["']/gi)) {
+    values.push(match[1]);
+  }
+  return [...new Set(values.filter(value => /(?:print|pdf)/i.test(value)).map(value => {
+    try { return new URL(value, baseUrl).href; } catch (_) { return ''; }
+  }).filter(Boolean))];
+}
+
 async function fetchMemoTable(auth, range) {
   const headers = { Cookie: auth.cookie, Origin: rocket.ROCKET_BASE,
     Referer: `${rocket.ROCKET_BASE}/main/memo_list.php`, 'X-Requested-With': 'XMLHttpRequest' };
@@ -133,20 +147,46 @@ async function fetchMemoTable(auth, range) {
   throw new Error('No Memo rows could be read from Rocket; keeping previous sheet data');
 }
 
-async function approvalStatus(url, auth) {
-  if (!url) return 'ตรวจไม่ได้';
-  try {
-    const response = await rocket.fetchWithTimeout(url, {
-      headers: { Cookie: auth.cookie, Referer: `${rocket.ROCKET_BASE}/main/memo_list.php` }
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const pdf = Buffer.from(await response.arrayBuffer());
-    if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('not a PDF');
-    return APPROVAL_LABELS[await checkApproval(pdf)];
-  } catch (error) {
-    console.log(`Memo approval check failed for ${url}: ${error.message}`);
-    return 'ตรวจไม่ได้';
+async function approvalStatus(memo, auth) {
+  const headers = { Cookie: auth.cookie, Referer: `${rocket.ROCKET_BASE}/main/memo_list.php` };
+  const candidates = [];
+  const add = values => values.filter(Boolean).forEach(value => {
+    if (!candidates.includes(value)) candidates.push(value);
+  });
+  add([memo.pdfUrl]);
+
+  if (memo.url) {
+    add([
+      memo.url.replace(/memo_edit\.php/i, 'memo_print.php'),
+      memo.url.replace(/memo_edit\.php/i, 'print_memo.php')
+    ]);
+    try {
+      const detail = await rocket.fetchWithTimeout(memo.url, { headers });
+      if (detail.ok) add(memoPdfCandidates(await detail.text(), memo.url));
+    } catch (error) {
+      console.log(`Memo detail lookup failed for ${memo.url}: ${error.message}`);
+    }
   }
+
+  for (let i = 0; i < candidates.length; i++) {
+    const url = candidates[i];
+    try {
+      const response = await rocket.fetchWithTimeout(url, { headers: { ...headers, Referer: memo.url || headers.Referer } });
+      if (!response.ok) continue;
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.subarray(0, 5).toString('latin1') === '%PDF-') {
+        return APPROVAL_LABELS[await checkApproval(buffer)];
+      }
+      const contentType = String(response.headers.get('content-type') || '');
+      if (/html|text/i.test(contentType) || buffer.subarray(0, 1).toString() === '<') {
+        add(memoPdfCandidates(buffer.toString('utf8'), url));
+      }
+    } catch (error) {
+      console.log(`Memo PDF candidate failed for ${url}: ${error.message}`);
+    }
+  }
+  console.log(`No PDF could be resolved for Memo ${memo.url || '(no URL)'}`);
+  return 'ตรวจไม่ได้';
 }
 
 async function main() {
@@ -164,7 +204,7 @@ async function main() {
   for (const memo of memos) {
     const parsed = splitDetails(memo.detail);
     const people = splitTechniciansAndPlates(memo.technicians);
-    const status = await approvalStatus(memo.pdfUrl, auth);
+    const status = await approvalStatus(memo, auth);
     rows.push([memo.subject, memo.detail, parsed.province, parsed.date, parsed.countDate,
       memo.creator, memo.createdAt, memo.refs, people.technicians, people.plates,
       memo.file, memo.url, status, status === APPROVED ? APPROVER : '', now]);
@@ -184,4 +224,5 @@ if (require.main === module) main().catch(error => {
   process.exit(1);
 });
 
-module.exports = { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows, tableFromResponse };
+module.exports = { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows,
+  tableFromResponse, memoPdfCandidates };

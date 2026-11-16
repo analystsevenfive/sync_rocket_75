@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows } = require('../sync-memo');
+const { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows,
+  memoPdfCandidates } = require('../sync-memo');
 
 test('vehicle registration is separated from technician names', () => {
   assert.deepEqual(splitTechniciansAndPlates('1.ช่างคนแรก\n2.ช่างคนที่สอง\n3ฅย75 - Isuzu 75 ช่าง'),
@@ -40,4 +41,13 @@ test('Memo table keeps content and detail in separate columns', () => {
   assert.match(rows[0].refs, /BKIN1026-000166/);
   assert.equal(rows[0].url, 'https://rocket75.com/main/memo_edit.php?id=123');
   assert.equal(rows[0].pdfUrl, 'https://rocket75.com/main/memo_print.php?id=123');
+});
+
+test('Memo PDF links are discovered from detail page attributes and JavaScript', () => {
+  const html = `<iframe src="../print/memo.pdf?id=1"></iframe>
+    <button onclick="window.open('memo_print.php?id=2')">print</button>`;
+  assert.deepEqual(memoPdfCandidates(html, 'https://rocket75.com/main/memo_edit.php?id=2'), [
+    'https://rocket75.com/print/memo.pdf?id=1',
+    'https://rocket75.com/main/memo_print.php?id=2'
+  ]);
 });
