@@ -75,11 +75,14 @@ function extractMemoRows(html) {
     const detail = rocket.cleanText(cells[1]);
     const refs = rocket.cleanText(cells[3]);
     const file = rocket.cleanText(cells[5] || '');
-    const link = tr[1].match(/href=["']([^"']*memo[^"']*\.php\?[^"']+)["']/i)?.[1] || '';
+    const links = [...tr[1].matchAll(/href=["']([^"']+)["']/gi)]
+      .map(match => new URL(match[1], `${rocket.ROCKET_BASE}/main/`).href);
+    const editUrl = links.find(link => /memo_edit\.php\?/i.test(link)) || '';
+    const pdfUrl = links.find(link => /(?:memo_print|print_memo|memo_pdf)\.php\?|\.pdf(?:\?|$)/i.test(link)) || '';
     rows.push({ subject: rocket.cleanText(cells[0]), detail,
       creator: creator.filter(s => s !== createdAt).join(' '), createdAt,
       refs, technicians: rocket.cleanText(cells[4]), file,
-      url: link ? new URL(link, `${rocket.ROCKET_BASE}/main/`).href : '' });
+      url: editUrl || pdfUrl, pdfUrl });
   }
   return rows;
 }
@@ -130,10 +133,12 @@ async function fetchMemoTable(auth, range) {
   throw new Error('No Memo rows could be read from Rocket; keeping previous sheet data');
 }
 
-async function approvalStatus(url) {
+async function approvalStatus(url, auth) {
   if (!url) return 'ตรวจไม่ได้';
   try {
-    const response = await rocket.fetchWithTimeout(url);
+    const response = await rocket.fetchWithTimeout(url, {
+      headers: { Cookie: auth.cookie, Referer: `${rocket.ROCKET_BASE}/main/memo_list.php` }
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const pdf = Buffer.from(await response.arrayBuffer());
     if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('not a PDF');
@@ -159,7 +164,7 @@ async function main() {
   for (const memo of memos) {
     const parsed = splitDetails(memo.detail);
     const people = splitTechniciansAndPlates(memo.technicians);
-    const status = await approvalStatus(memo.url);
+    const status = await approvalStatus(memo.pdfUrl, auth);
     rows.push([memo.subject, memo.detail, parsed.province, parsed.date, parsed.countDate,
       memo.creator, memo.createdAt, memo.refs, people.technicians, people.plates,
       memo.file, memo.url, status, status === APPROVED ? APPROVER : '', now]);

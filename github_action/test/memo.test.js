@@ -29,7 +29,8 @@ test('Memo table keeps content and detail in separate columns', () => {
   const html = `<table><tr>
     <td>งานติดตั้ง</td><td>จ.สงขลา วันที่ 12-14 ตุลาคม 2569</td>
     <td>ผู้ทำรายการ<br>10/10/2026 13:15</td><td>BKIN1026-000165<br>BKIN1026-000166</td>
-    <td>ช่างหนึ่ง<br>ช่างสอง</td><td>file.pdf</td><td><a href="memo_print.php?id=123">พิมพ์</a></td>
+    <td>ช่างหนึ่ง<br>ช่างสอง</td><td>file.pdf</td><td>
+      <a href="memo_edit.php?id=123">แก้ไข</a><a href="memo_print.php?id=123">พิมพ์</a></td>
   </tr></table>`;
   const rows = extractMemoRows(html);
   assert.equal(rows.length, 1);
@@ -37,4 +38,6 @@ test('Memo table keeps content and detail in separate columns', () => {
   assert.equal(rows[0].detail, 'จ.สงขลา วันที่ 12-14 ตุลาคม 2569');
   assert.equal(rows[0].createdAt, '10/10/2026 13:15');
   assert.match(rows[0].refs, /BKIN1026-000166/);
+  assert.equal(rows[0].url, 'https://rocket75.com/main/memo_edit.php?id=123');
+  assert.equal(rows[0].pdfUrl, 'https://rocket75.com/main/memo_print.php?id=123');
 });
