@@ -124,6 +124,18 @@ function memoEndpointHints(html) {
   return values.slice(0, 80);
 }
 
+function memoFileFieldHints(html) {
+  const hints = [];
+  for (const match of String(html || '').matchAll(/<input\b[^>]*(?:memo_file_existing|memo_file_name|\bname=["']memo_file["'])[^>]*>/gi)) {
+    const tag = match[0];
+    const key = tag.match(/(?:id|name)=["']([^"']+)["']/i)?.[1] || 'memo_file';
+    const value = tag.match(/value=["']([^"']*)["']/i)?.[1] || '';
+    const safeValue = value.replace(/[^/\\]+(?=\.[a-z0-9]{2,6}(?:\?|$))/i, '<file>');
+    hints.push({ key, value: safeValue });
+  }
+  return hints;
+}
+
 async function fetchMemoTable(auth, range) {
   const headers = { Cookie: auth.cookie, Origin: rocket.ROCKET_BASE,
     Referer: `${rocket.ROCKET_BASE}/main/memo_list.php`, 'X-Requested-With': 'XMLHttpRequest' };
@@ -179,6 +191,7 @@ async function approvalStatus(memo, auth) {
         if (!memoDiagnosticLogged) {
           memoDiagnosticLogged = true;
           console.log('Memo detail endpoint hints: ' + JSON.stringify(memoEndpointHints(html)));
+          console.log('Memo file field hints: ' + JSON.stringify(memoFileFieldHints(html)));
         }
       }
     } catch (error) {
