@@ -107,9 +107,11 @@ async function matchAvatar(jpeg, sticker) {
   return best;
 }
 
-async function checkApproval(pdf) {
+async function checkApproval(file) {
   let stickerFound = false;
-  for (const jpeg of extractJpegs(pdf)) {
+  const isPdf = file.subarray(0, 5).toString('latin1') === '%PDF-';
+  const images = isPdf ? extractJpegs(file) : [file];
+  for (const jpeg of images) {
     const sticker = await findSticker(jpeg);
     if (sticker.score < MATCH_THRESHOLD) continue;
     if (await matchAvatar(jpeg, sticker) >= AVATAR_THRESHOLD) return 'approved';

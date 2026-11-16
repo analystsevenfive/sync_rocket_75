@@ -10,7 +10,6 @@ const HEADERS = [
 const APPROVED = 'อนุมัติแล้ว';
 const APPROVAL_LABELS = { approved: APPROVED, 'other-sender': 'สติกเกอร์จากคนอื่น', 'no-sticker': 'ไม่พบสติกเกอร์' };
 const APPROVER = 'คุณวิรัตน์'; // ยืนยันจากรูปโปรไฟล์ Virat 75 ข้างสติกเกอร์
-let memoDiagnosticLogged = false;
 
 const MONTHS = {
   มกราคม: 1, กุมภาพันธ์: 2, มีนาคม: 3, เมษายน: 4, พฤษภาคม: 5, มิถุนายน: 6,
@@ -114,44 +113,15 @@ function memoPdfCandidates(html, baseUrl) {
   }).filter(Boolean))];
 }
 
-function memoEndpointHints(html) {
-  const values = [];
-  const text = String(html || '').replace(/&amp;/gi, '&');
-  for (const match of text.matchAll(/["']([^"'<>]*(?:\.php|\.pdf|print|download|file)[^"'<>]*)["']/gi)) {
-    const value = match[1].trim().replace(/([?&][^=&]+)=([^&#\s]*)/g, '$1=<redacted>');
-    if (value && value.length < 300 && !values.includes(value)) values.push(value);
-  }
-  return values.slice(0, 80);
-}
-
-function memoFileFieldHints(html) {
-  const hints = [];
-  for (const match of String(html || '').matchAll(/<input\b[^>]*(?:memo_file_existing|memo_file_name|\bname=["']memo_file["'])[^>]*>/gi)) {
-    const tag = match[0];
-    const key = tag.match(/(?:id|name)=["']([^"']+)["']/i)?.[1] || 'memo_file';
-    const value = tag.match(/value=["']([^"']*)["']/i)?.[1] || '';
-    const safeValue = value.replace(/[^/\\]+(?=\.[a-z0-9]{2,6}(?:\?|$))/i, '<file>');
-    hints.push({ key, value: safeValue });
-  }
-  return hints;
-}
-
-function memoApprovalHints(html) {
+function memoApprovalEvidenceCandidates(html, baseUrl) {
   const text = String(html || '');
-  const fieldNames = [...text.matchAll(/<(?:input|select|textarea)\b[^>]*(?:name|id)=["']([^"']+)["'][^>]*>/gi)]
-    .map(match => match[1])
-    .filter(name => /approv|confirm|status|user|staff|boss|head/i.test(name));
-  const labels = [...text.matchAll(/.{0,100}(?:อนุมัติ|ผู้อนุมัติ|approve|approval|confirm).{0,140}/gi)]
-    .map(match => rocket.cleanText(match[0]).replace(/\b\d{6,}\b/g, '<id>'))
-    .filter(Boolean);
   const evidenceAt = text.indexOf('หลักฐานการอนุมัติที่มีอยู่');
-  const evidence = evidenceAt < 0 ? '' : text.slice(evidenceAt, evidenceAt + 2500);
-  const evidenceFields = [...evidence.matchAll(/<(?:input|select|textarea)\b[^>]*(?:name|id)=["']([^"']+)["'][^>]*>/gi)]
-    .map(match => match[1]);
-  const evidenceLinks = [...evidence.matchAll(/(?:href|src)=["']([^"']+)["']/gi)]
-    .map(match => match[1].replace(/([?&][^=&]+)=([^&#\s]*)/g, '$1=<redacted>'));
-  return { fieldNames: [...new Set(fieldNames)].slice(0, 50), labels: [...new Set(labels)].slice(0, 20),
-    evidenceFields: [...new Set(evidenceFields)].slice(0, 50), evidenceLinks: [...new Set(evidenceLinks)].slice(0, 30) };
+  if (evidenceAt < 0) return [];
+  const evidence = text.slice(evidenceAt, evidenceAt + 10000);
+  return [...new Set([...evidence.matchAll(/(?:href|src)=["']([^"']+\.(?:jpe?g|png|webp)(?:\?[^"']*)?)["']/gi)]
+    .map(match => {
+      try { return new URL(match[1].replace(/&amp;/gi, '&'), baseUrl).href; } catch (_) { return ''; }
+    }).filter(Boolean))];
 }
 
 async function fetchMemoTable(auth, range) {
@@ -195,6 +165,7 @@ async function approvalStatus(memo, auth) {
     if (!candidates.includes(value)) candidates.push(value);
   });
   add([memo.pdfUrl]);
+  let imageResult = 'no-sticker';
 
   if (memo.url) {
     add([
@@ -206,12 +177,7 @@ async function approvalStatus(memo, auth) {
       if (detail.ok) {
         const html = await detail.text();
         add(memoPdfCandidates(html, memo.url));
-        if (!memoDiagnosticLogged) {
-          memoDiagnosticLogged = true;
-          console.log('Memo detail endpoint hints: ' + JSON.stringify(memoEndpointHints(html)));
-          console.log('Memo file field hints: ' + JSON.stringify(memoFileFieldHints(html)));
-          console.log('Memo approval hints: ' + JSON.stringify(memoApprovalHints(html)));
-        }
+        add(memoApprovalEvidenceCandidates(html, memo.url));
       }
     } catch (error) {
       console.log(`Memo detail lookup failed for ${memo.url}: ${error.message}`);
@@ -228,6 +194,13 @@ async function approvalStatus(memo, auth) {
         return APPROVAL_LABELS[await checkApproval(buffer)];
       }
       const contentType = String(response.headers.get('content-type') || '');
+      if (/^image\//i.test(contentType) || /^\xFF\xD8/.test(buffer.subarray(0, 2).toString('latin1')) ||
+          buffer.subarray(0, 8).toString('latin1') === '\x89PNG\r\n\x1a\n') {
+        const result = await checkApproval(buffer);
+        if (result === 'approved') return APPROVAL_LABELS.approved;
+        if (result === 'other-sender') imageResult = result;
+        continue;
+      }
       if (/html|text/i.test(contentType) || buffer.subarray(0, 1).toString() === '<') {
         add(memoPdfCandidates(buffer.toString('utf8'), url));
       }
@@ -235,6 +208,7 @@ async function approvalStatus(memo, auth) {
       console.log(`Memo PDF candidate failed for ${url}: ${error.message}`);
     }
   }
+  if (candidates.some(url => /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(url))) return APPROVAL_LABELS[imageResult];
   console.log(`No PDF could be resolved for Memo ${memo.url || '(no URL)'}`);
   return 'ตรวจไม่ได้';
 }
@@ -259,6 +233,11 @@ async function main() {
       memo.creator, memo.createdAt, memo.refs, people.technicians, people.plates,
       memo.file, memo.url, status, status === APPROVED ? APPROVER : '', now]);
   }
+  const approvalCounts = rows.reduce((counts, row) => {
+    counts[row[12]] = (counts[row[12]] || 0) + 1;
+    return counts;
+  }, {});
+  console.log('Memo approval summary: ' + JSON.stringify(approvalCounts));
   const sheets = await sheetsLib.getSheetsClient();
   const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, SHEET_NAME);
   const summary = `Memo | ช่วงข้อมูล ${range.from} - ${range.to} | ` +
@@ -275,4 +254,4 @@ if (require.main === module) main().catch(error => {
 });
 
 module.exports = { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows,
-  tableFromResponse, memoPdfCandidates };
+  tableFromResponse, memoPdfCandidates, memoApprovalEvidenceCandidates };

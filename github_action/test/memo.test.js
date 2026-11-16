@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { memoRange, splitDetails, splitTechniciansAndPlates, extractMemoRows,
-  memoPdfCandidates } = require('../sync-memo');
+  memoPdfCandidates, memoApprovalEvidenceCandidates } = require('../sync-memo');
 
 test('vehicle registration is separated from technician names', () => {
   assert.deepEqual(splitTechniciansAndPlates('1.ช่างคนแรก\n2.ช่างคนที่สอง\n3ฅย75 - Isuzu 75 ช่าง'),
@@ -49,5 +49,15 @@ test('Memo PDF links are discovered from detail page attributes and JavaScript',
   assert.deepEqual(memoPdfCandidates(html, 'https://rocket75.com/main/memo_edit.php?id=2'), [
     'https://rocket75.com/print/memo.pdf?id=1',
     'https://rocket75.com/main/memo_print.php?id=2'
+  ]);
+});
+
+test('Memo approval evidence images are read only from the existing evidence section', () => {
+  const html = `<img src="upload/other.jpg">
+    <h4>หลักฐานการอนุมัติที่มีอยู่</h4>
+    <a href="upload/memo_img/one.jpg"><img src="upload/memo_img/two.png"></a>`;
+  assert.deepEqual(memoApprovalEvidenceCandidates(html, 'https://rocket75.com/main/memo_edit.php?id=2'), [
+    'https://rocket75.com/main/upload/memo_img/one.jpg',
+    'https://rocket75.com/main/upload/memo_img/two.png'
   ]);
 });
