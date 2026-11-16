@@ -10,6 +10,7 @@ const HEADERS = [
 const APPROVED = 'อนุมัติแล้ว';
 const APPROVAL_LABELS = { approved: APPROVED, 'other-sender': 'สติกเกอร์จากคนอื่น', 'no-sticker': 'ไม่พบสติกเกอร์' };
 const APPROVER = 'คุณวิรัตน์'; // ยืนยันจากรูปโปรไฟล์ Virat 75 ข้างสติกเกอร์
+let memoDiagnosticLogged = false;
 
 const MONTHS = {
   มกราคม: 1, กุมภาพันธ์: 2, มีนาคม: 3, เมษายน: 4, พฤษภาคม: 5, มิถุนายน: 6,
@@ -113,6 +114,16 @@ function memoPdfCandidates(html, baseUrl) {
   }).filter(Boolean))];
 }
 
+function memoEndpointHints(html) {
+  const values = [];
+  const text = String(html || '').replace(/&amp;/gi, '&');
+  for (const match of text.matchAll(/["']([^"'<>]*(?:\.php|\.pdf|print|download|file)[^"'<>]*)["']/gi)) {
+    const value = match[1].trim().replace(/([?&][^=&]+)=([^&#\s]*)/g, '$1=<redacted>');
+    if (value && value.length < 300 && !values.includes(value)) values.push(value);
+  }
+  return values.slice(0, 80);
+}
+
 async function fetchMemoTable(auth, range) {
   const headers = { Cookie: auth.cookie, Origin: rocket.ROCKET_BASE,
     Referer: `${rocket.ROCKET_BASE}/main/memo_list.php`, 'X-Requested-With': 'XMLHttpRequest' };
@@ -162,7 +173,14 @@ async function approvalStatus(memo, auth) {
     ]);
     try {
       const detail = await rocket.fetchWithTimeout(memo.url, { headers });
-      if (detail.ok) add(memoPdfCandidates(await detail.text(), memo.url));
+      if (detail.ok) {
+        const html = await detail.text();
+        add(memoPdfCandidates(html, memo.url));
+        if (!memoDiagnosticLogged) {
+          memoDiagnosticLogged = true;
+          console.log('Memo detail endpoint hints: ' + JSON.stringify(memoEndpointHints(html)));
+        }
+      }
     } catch (error) {
       console.log(`Memo detail lookup failed for ${memo.url}: ${error.message}`);
     }
