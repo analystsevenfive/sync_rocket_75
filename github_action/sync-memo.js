@@ -144,7 +144,14 @@ function memoApprovalHints(html) {
   const labels = [...text.matchAll(/.{0,100}(?:อนุมัติ|ผู้อนุมัติ|approve|approval|confirm).{0,140}/gi)]
     .map(match => rocket.cleanText(match[0]).replace(/\b\d{6,}\b/g, '<id>'))
     .filter(Boolean);
-  return { fieldNames: [...new Set(fieldNames)].slice(0, 50), labels: [...new Set(labels)].slice(0, 20) };
+  const evidenceAt = text.indexOf('หลักฐานการอนุมัติที่มีอยู่');
+  const evidence = evidenceAt < 0 ? '' : text.slice(evidenceAt, evidenceAt + 2500);
+  const evidenceFields = [...evidence.matchAll(/<(?:input|select|textarea)\b[^>]*(?:name|id)=["']([^"']+)["'][^>]*>/gi)]
+    .map(match => match[1]);
+  const evidenceLinks = [...evidence.matchAll(/(?:href|src)=["']([^"']+)["']/gi)]
+    .map(match => match[1].replace(/([?&][^=&]+)=([^&#\s]*)/g, '$1=<redacted>'));
+  return { fieldNames: [...new Set(fieldNames)].slice(0, 50), labels: [...new Set(labels)].slice(0, 20),
+    evidenceFields: [...new Set(evidenceFields)].slice(0, 50), evidenceLinks: [...new Set(evidenceLinks)].slice(0, 30) };
 }
 
 async function fetchMemoTable(auth, range) {
