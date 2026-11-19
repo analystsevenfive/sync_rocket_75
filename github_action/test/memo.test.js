@@ -26,6 +26,17 @@ test('Memo detail yields province and inclusive count of scheduled dates', () =>
     { province: 'เชียงใหม่-เชียงราย', date: '6-9 ตุลาคม 2569', countDate: 4 });
 });
 
+test('Memo detail handles missing "วันที่", branch-only location and cross-month ranges', () => {
+  assert.deepEqual(splitDetails('กำหนดการช่างเดินทางงานติดตั้ง จ. เชียงราย 18-20 พฤศจิกายน 2569'),
+    { province: 'เชียงราย', date: '18-20 พฤศจิกายน 2569', countDate: 3 });
+  assert.deepEqual(splitDetails('กำหนดการธุรการและเจ้าหน้าที่คลังอะไหล่ เดินทาง ปฏิบัติงานที่ สาขาสมุย วันที่ 18 - 25 พฤศจิกายน 2569'),
+    { province: 'สมุย', date: '18 - 25 พฤศจิกายน 2569', countDate: 8 });
+  assert.deepEqual(splitDetails('กำหนดการช่างเดินทาง ปฏิบัติงานที่ สาขาสมุย วันที่ 18 พฤศจิกายน ถึง 2569 3 ธันวาคม 2569'),
+    { province: 'สมุย', date: '18 พฤศจิกายน - 3 ธันวาคม 2569', countDate: 16 });
+  assert.deepEqual(splitDetails('งานซ่อม จ.ราชบุรี วันที่ 30 ธันวาคม 2569 - 2 มกราคม 2570'),
+    { province: 'ราชบุรี', date: '30 ธันวาคม 2569 - 2 มกราคม 2570', countDate: 4 });
+});
+
 test('Memo table keeps content and detail in separate columns', () => {
   const html = `<table><tr>
     <td>งานติดตั้ง</td><td>จ.สงขลา วันที่ 12-14 ตุลาคม 2569</td>
