@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   resign-fill:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright 1.56.1 has no Chromium build for ubuntu-latest (26.04)
     defaults:
       run:
         working-directory: github_action
