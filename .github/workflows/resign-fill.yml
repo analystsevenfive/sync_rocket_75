@@ -1,0 +1,59 @@
+name: Resign Fill
+
+on:
+  workflow_dispatch:
+    inputs:
+      employee_code:
+        description: Employee code (6-8 digits)
+        required: true
+        type: string
+      mode:
+        description: dry-run verifies only; submit records the resignation
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, submit]
+      confirm_submit:
+        description: For submit, type SUBMIT followed by a space and employee code
+        required: false
+        type: string
+
+concurrency:
+  group: resign-fill-${{ inputs.employee_code }}
+  cancel-in-progress: false
+
+jobs:
+  resign-fill:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github_action
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: github_action/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Fill resignation form
+        env:
+          ROCKET_USERNAME: ${{ secrets.ROCKET_USERNAME }}
+          ROCKET_PASSWORD: ${{ secrets.ROCKET_PASSWORD }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          EMPLOYEE_CODE: ${{ inputs.employee_code }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_SUBMIT: ${{ inputs.confirm_submit }}
+          SCREENSHOT_DIR: ${{ github.workspace }}/resign-artifacts
+        run: node ../HR/resign-fill.js
+      - name: Upload verification screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resign-${{ inputs.employee_code }}-${{ inputs.mode }}
+          path: resign-artifacts
+          if-no-files-found: warn
+          retention-days: 14
