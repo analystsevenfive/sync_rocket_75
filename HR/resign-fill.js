@@ -178,13 +178,22 @@ async function main() {
   const row = await readEmployee(employeeCode);
   console.log(`Validated sheet row ${row.sheetRow} for ${employeeCode}; mode=${mode}`);
   const auth = await rocket.rocketLogin();
+  // Rocket pages read token/key from localStorage (not a PHPSESSID cookie); the cookie is optional.
+  if (!auth.token || !auth.key) throw new Error('Rocket login did not return token/key');
   const sessionId = String(auth.cookie || '').match(/PHPSESSID=([^;]+)/i)?.[1];
-  if (!sessionId) throw new Error('Rocket login did not return PHPSESSID');
   await fs.mkdir(SCREENSHOT_DIR, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({ locale: 'th-TH', timezoneId: 'Asia/Bangkok' });
-    await context.addCookies([{ name: 'PHPSESSID', value: sessionId, domain: 'rocket75.com', path: '/', secure: true }]);
+    await context.addInitScript(({ token, key }) => {
+      if (/(^|\.)rocket75\.com$/.test(location.hostname)) {
+        localStorage.setItem('token', token);
+        localStorage.setItem('key', key);
+      }
+    }, { token: auth.token, key: auth.key });
+    if (sessionId) {
+      await context.addCookies([{ name: 'PHPSESSID', value: sessionId, domain: 'rocket75.com', path: '/', secure: true }]);
+    }
     const page = await context.newPage();
     const filled = await fillForm(page, row);
     console.log(`Filled and verified ${employeeCode} (${filled.fullName}); reason=${filled.reason}`);
