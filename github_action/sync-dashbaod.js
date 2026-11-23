@@ -15,11 +15,27 @@ const sheetsLib = require('./lib/sheets-client');
 
 const START_DATE = '01/01/2025';
 // แต่ละสาขาเขียนแยกชีท — name ต้องตรง (หรือเป็นส่วนหนึ่ง) ของชื่อใน dropdown สาขา
+// key ใช้เลือกสาขาตอนรัน: node sync-dashbaod.js samui (หรือ env DASHBOARD_BRANCH)
+// ไม่ระบุ = ทำทุกสาขา — แต่ละ GitHub Action รันแยกสาขาของตัวเอง
 const BRANCHES = [
-  { name: 'กรุงเทพ', sheet: 'Dashboard' },
-  { name: 'สมุย', sheet: 'Dashboard สมุย' },
-  { name: 'ภูเก็ต', sheet: 'Dashboard ภูเก็ต' }
+  { key: 'bangkok', name: 'กรุงเทพ', sheet: 'Dashboard' },
+  { key: 'samui', name: 'สมุย', sheet: 'Dashboard สมุย' },
+  { key: 'phuket', name: 'ภูเก็ต', sheet: 'Dashboard ภูเก็ต' }
 ];
+
+
+
+function selectBranches(arg) {
+  const keys = String(arg || '').split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+  if (!keys.length) return BRANCHES.slice();
+  return keys.map(function(key) {
+    const branch = BRANCHES.find(b => b.key === key);
+    if (!branch) {
+      throw new Error('ไม่รู้จักสาขา "' + key + '" (ใช้ได้: ' + BRANCHES.map(b => b.key).join(', ') + ')');
+    }
+    return branch;
+  });
+}
 
 // export ช่วงยาวรวดเดียว (~2 ปี) เกิน 5 นาที timeout —
 // แบ่งยิงทีละเดือนแทน แล้วค่อยรวมแถว
@@ -254,7 +270,8 @@ async function syncBranch(ctx, branch) {
 
 async function main() {
 
-  console.log('========== DASHBOARD SYNC (รายงานภาพรวม) ==========');
+  const branches = selectBranches(process.argv[2] || process.env.DASHBOARD_BRANCH);
+  console.log('========== DASHBOARD SYNC (รายงานภาพรวม): ' + branches.map(b => b.name).join(', ') + ' ==========');
 
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) {
@@ -267,8 +284,8 @@ async function main() {
   const endDate = rocket.computeTodayRangeBangkok().end;
   console.log('ช่วงวันที่: ' + START_DATE + ' - ' + endDate);
 
-  const areaValues = await resolveBranchValues(auth, BRANCHES.map(b => b.name));
-  BRANCHES.forEach(b => console.log('สาขา ' + b.name + ' = ' + areaValues[b.name]));
+  const areaValues = await resolveBranchValues(auth, branches.map(b => b.name));
+  branches.forEach(b => console.log('สาขา ' + b.name + ' = ' + areaValues[b.name]));
 
   const months = splitIntoMonths(START_DATE, endDate);
   console.log('แบ่งเป็น ' + months.length + ' เดือน');
@@ -292,7 +309,7 @@ async function main() {
 
   // ทำทีละสาขา — สาขาไหนพังไม่ทำให้สาขาอื่นไม่ได้อัปเดต แต่ job ยัง fail
   const failed = [];
-  for (const branch of BRANCHES) {
+  for (const branch of branches) {
     try {
       await syncBranch(ctx, branch);
     } catch (err) {
@@ -315,4 +332,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { dateYear, shouldIncludeDashboardRow };
+module.exports = { dateYear, shouldIncludeDashboardRow, selectBranches };
