@@ -4,17 +4,22 @@
  * ยิง export ตัวเดียวกับปุ่ม "รายงาน" ของหน้านั้น
  * (ajax/report_ticket/overall/export_overall_new.php —
  * ยืนยันใน test/ticket_report.js แล้วว่าได้ xlsx ราย
- * ticket ครบ) กรองสาขา "กรุงเทพ" ตั้งแต่ 01/01/2025
- * ถึงวันนี้ แล้วเลือกเฉพาะคอลัมน์ตามตัวอย่างลงชีท
+ * ticket ครบ) แยกตามสาขา (กรุงเทพ / สมุย / ภูเก็ต) ตั้งแต่
+ * 01/01/2025 ถึงวันนี้ แล้วเลือกเฉพาะคอลัมน์ตามตัวอย่าง
+ * ลงชีทของแต่ละสาขา
  *************************************************/
 
 const XLSX = require('xlsx');
 const rocket = require('./lib/rocket-client');
 const sheetsLib = require('./lib/sheets-client');
 
-const DASHBOARD_SHEET_NAME = 'Dashboard';
 const START_DATE = '01/01/2025';
-const BRANCH_NAME = 'กรุงเทพ';
+// แต่ละสาขาเขียนแยกชีท — name ต้องตรง (หรือเป็นส่วนหนึ่ง) ของชื่อใน dropdown สาขา
+const BRANCHES = [
+  { name: 'กรุงเทพ', sheet: 'Dashboard' },
+  { name: 'สมุย', sheet: 'Dashboard สมุย' },
+  { name: 'ภูเก็ต', sheet: 'Dashboard ภูเก็ต' }
+];
 
 // export ช่วงยาวรวดเดียว (~2 ปี) เกิน 5 นาที timeout —
 // แบ่งยิงทีละเดือนแทน แล้วค่อยรวมแถว
@@ -72,9 +77,9 @@ function requestHeaders(auth) {
 
 
 
-// value ของ option "กรุงเทพ" ใน dropdown สาขา (area_select_main)
+// value ของแต่ละสาขาใน dropdown สาขา (area_select_main)
 // อ่านจากหน้าจริงแทนการ hardcode เผื่อ id เปลี่ยน
-async function resolveBranchValue(auth) {
+async function resolveBranchValues(auth, branchNames) {
   const res = await rocket.fetchWithTimeout(rocket.ROCKET_BASE + '/main/report_ticket.php', {
     method: 'GET',
     headers: requestHeaders(auth)
@@ -86,14 +91,23 @@ async function resolveBranchValue(auth) {
     throw new Error('ไม่เจอ dropdown สาขา (area_select_main) ในหน้า report_ticket.php');
   }
 
+  const options = [];
   const optionRe = /<option[^>]*value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/gi;
   let m;
   while ((m = optionRe.exec(select[0])) !== null) {
-    if (rocket.cleanText(m[2]).includes(BRANCH_NAME)) {
-      return m[1];
-    }
+    options.push({ value: m[1], label: rocket.cleanText(m[2]) });
   }
-  throw new Error('ไม่เจอสาขา "' + BRANCH_NAME + '" ใน dropdown สาขา');
+
+  const values = {};
+  branchNames.forEach(function(name) {
+    const option = options.find(o => o.value && o.label.includes(name));
+    if (!option) {
+      throw new Error('ไม่เจอสาขา "' + name + '" ใน dropdown สาขา (มี: ' +
+        options.map(o => o.label).join(', ') + ')');
+    }
+    values[name] = option.value;
+  });
+  return values;
 }
 
 
@@ -203,28 +217,14 @@ function extractDashboardRows(buffer) {
 
 
 
-async function main() {
+async function syncBranch(ctx, branch) {
+  console.log('---------- สาขา ' + branch.name + ' -> ชีท "' + branch.sheet + '" ----------');
 
-  console.log('========== DASHBOARD SYNC (รายงานภาพรวม) ==========');
-
-  const auth = await rocket.rocketLogin();
-  console.log('LOGIN OK');
-
-  const endDate = rocket.computeTodayRangeBangkok().end;
-  console.log('ช่วงวันที่: ' + START_DATE + ' - ' + endDate);
-
-  const areaValue = await resolveBranchValue(auth);
-  console.log('สาขา ' + BRANCH_NAME + ' = ' + areaValue);
-
-  const months = splitIntoMonths(START_DATE, endDate);
-  console.log('แบ่งเป็น ' + months.length + ' เดือน');
-
-  const monthRows = await rocket.mapConcurrentStrict(months, MONTH_CONCURRENCY, async function(month) {
-    const [buffer, listHtml] = await Promise.all([
-      getOverallReport(auth, month.start, month.end, areaValue),
-      rocket.getParentTicketHtml(auth, month.start, month.end)
+  const monthRows = await rocket.mapConcurrentStrict(ctx.months, MONTH_CONCURRENCY, async function(month, i) {
+    const [buffer, urlMap] = await Promise.all([
+      getOverallReport(ctx.auth, month.start, month.end, ctx.areaValues[branch.name]),
+      ctx.getUrlMap(i)
     ]);
-    const urlMap = extractTicketUrlMap(listHtml);
     const rows = extractDashboardRows(buffer)
       .map(row => row.concat([lookupTicketUrl(urlMap, row[TICKET_COL])]));
     console.log('  ' + month.start + ' - ' + month.end + ': ' + rows.length + ' แถว');
@@ -238,22 +238,72 @@ async function main() {
   }
 
   if (rows.length === 0) {
-    throw new Error('ได้ 0 แถว — น่าจะเป็น fetch/parse ผิดพลาด ไม่เขียนทับชีท');
+    throw new Error('สาขา ' + branch.name + ' ได้ 0 แถว — น่าจะเป็น fetch/parse ผิดพลาด ไม่เขียนทับชีท');
   }
+
+  const sheetId = await sheetsLib.ensureSheetExists(ctx.sheets, ctx.spreadsheetId, branch.sheet);
+  const lastSync = rocket.formatDateTimeBangkok(new Date());
+  const summaryText = 'สาขา ' + branch.name + ' | ช่วงข้อมูล ' + START_DATE + ' - ' + ctx.endDate +
+    ' | จำนวน ' + rows.length.toLocaleString('en-US') + ' รายการ | Last Sync ' + lastSync;
+  await sheetsLib.replaceSheetDataWithSummary(ctx.sheets, ctx.spreadsheetId, sheetId, branch.sheet, summaryText, SHEET_HEADERS, rows);
+
+  console.log('เขียนลงชีท "' + branch.sheet + '" สำเร็จ: ' + rows.length + ' แถว');
+}
+
+
+
+async function main() {
+
+  console.log('========== DASHBOARD SYNC (รายงานภาพรวม) ==========');
 
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) {
     throw new Error('ไม่พบ SPREADSHEET_ID ใน environment variables');
   }
+
+  const auth = await rocket.rocketLogin();
+  console.log('LOGIN OK');
+
+  const endDate = rocket.computeTodayRangeBangkok().end;
+  console.log('ช่วงวันที่: ' + START_DATE + ' - ' + endDate);
+
+  const areaValues = await resolveBranchValues(auth, BRANCHES.map(b => b.name));
+  BRANCHES.forEach(b => console.log('สาขา ' + b.name + ' = ' + areaValues[b.name]));
+
+  const months = splitIntoMonths(START_DATE, endDate);
+  console.log('แบ่งเป็น ' + months.length + ' เดือน');
+
+  // ตาราง ticket_list ไม่ขึ้นกับสาขา — ดึงครั้งเดียวต่อเดือนแล้วใช้ร่วมกันทุกสาขา
+  const urlMapCache = {};
+  function getUrlMap(i) {
+    if (!urlMapCache[i]) {
+      urlMapCache[i] = rocket.getParentTicketHtml(auth, months[i].start, months[i].end)
+        .then(extractTicketUrlMap)
+        .catch(function(err) {
+          delete urlMapCache[i]; // ให้ retry ยิงใหม่ได้
+          throw err;
+        });
+    }
+    return urlMapCache[i];
+  }
+
   const sheets = await sheetsLib.getSheetsClient();
-  const sheetId = await sheetsLib.ensureSheetExists(sheets, spreadsheetId, DASHBOARD_SHEET_NAME);
+  const ctx = { auth, endDate, areaValues, months, getUrlMap, sheets, spreadsheetId };
 
-  const lastSync = rocket.formatDateTimeBangkok(new Date());
-  const summaryText = 'สาขา ' + BRANCH_NAME + ' | ช่วงข้อมูล ' + START_DATE + ' - ' + endDate +
-    ' | จำนวน ' + rows.length.toLocaleString('en-US') + ' รายการ | Last Sync ' + lastSync;
-  await sheetsLib.replaceSheetDataWithSummary(sheets, spreadsheetId, sheetId, DASHBOARD_SHEET_NAME, summaryText, SHEET_HEADERS, rows);
+  // ทำทีละสาขา — สาขาไหนพังไม่ทำให้สาขาอื่นไม่ได้อัปเดต แต่ job ยัง fail
+  const failed = [];
+  for (const branch of BRANCHES) {
+    try {
+      await syncBranch(ctx, branch);
+    } catch (err) {
+      console.error('สาขา ' + branch.name + ' ล้มเหลว:', err);
+      failed.push(branch.name);
+    }
+  }
+  if (failed.length) {
+    throw new Error('Sync ไม่สำเร็จ ' + failed.length + ' สาขา: ' + failed.join(', '));
+  }
 
-  console.log('เขียนลงชีท \'' + DASHBOARD_SHEET_NAME + '\' สำเร็จ: ' + rows.length + ' แถว');
   console.log('DONE');
 
 }
