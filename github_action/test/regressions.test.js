@@ -946,8 +946,9 @@ for (const scriptName of ['sync-tomorrow-plan.js', 'sync-yesterday-jobs.js', 'sy
     await script.main();
 
     assert.ok(writtenRows, 'replaceSheetData must be called');
-    assert.equal(writtenRows.length, 1, `Expected exactly 1 row after filtering, got ${writtenRows.length}`);
-    assert.equal(writtenRows[0][1], 'BKRM01.R01', 'Written row ticketNo must be BKRM01.R01');
+    // V2 รวมทุกสาขา — ตั๋วสมุยที่มีช่างต้องผ่านด้วย; สคริปต์อื่นยังเอาเฉพาะ BK
+    const expected = scriptName === 'sync-daily-repair-v2.js' ? ['BKRM01.R01', 'SMRM01.R01'] : ['BKRM01.R01'];
+    assert.deepEqual(Array.from(writtenRows, row => row[1]), expected);
   });
 }
 

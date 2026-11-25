@@ -9,10 +9,12 @@
  *   Inspection Status, Sales Invoice No., Customer, Branch, Contact, Phone,
  *   Problem Reported, Product Name, Technician, Team, Serial,
  *   URL, Last Sync, Work Order Sent Date,
- *   GPS Coordinates, Check-in Time, Check-in Photo (GPS), Storefront Photo, Work Order Photo
+ *   GPS Coordinates, Check-in Time, Check-in Photo (GPS), Storefront Photo, Work Order Photo,
+ *   Service Branch
  *
  * สคริปต์แยกจาก sync-daily-repair.js — คอลัมน์เดิมทั้งหมด + พิกัด GPS และรูป
  * การเข้าซ่อม (ดึงจากหน้า ticket detail เดิม ไม่มี request เพิ่ม)
+ * และรวมตั๋วทุกสาขา (ชีทเดิมเอาเฉพาะ BK)
  *************************************************/
 
 const rocket = require('./lib/rocket-client');
@@ -56,8 +58,23 @@ const HEADERS = [
   'Check-in Time',
   'Check-in Photo (GPS)',
   'Storefront Photo',
-  'Work Order Photo'
+  'Work Order Photo',
+  'Service Branch'
 ];
+
+// สาขาที่รับงาน ดูจาก 2 ตัวอักษรแรกของ Ticket No
+// (คอลัมน์ Branch เดิมเป็นสาขาของลูกค้า ไม่ใช่สาขาเรา)
+// prefix ที่ไม่รู้จักแสดง prefix ตรงๆ แทนการเดา
+const SERVICE_BRANCH_BY_PREFIX = {
+  BK: 'กรุงเทพ',
+  SM: 'สมุย',
+  PK: 'ภูเก็ต'
+};
+
+function serviceBranch(ticketNo) {
+  const prefix = String(ticketNo || '').trim().toUpperCase().slice(0, 2);
+  return SERVICE_BRANCH_BY_PREFIX[prefix] || prefix;
+}
 
 
 
@@ -98,7 +115,7 @@ function jobToRow(d, lastSync) {
     d.url,
     lastSync,
     d.workOrderSentDate || ''
-  ].concat(checkinMediaCells(d));
+  ].concat(checkinMediaCells(d), [serviceBranch(d.ticketNo || d.parentTicketNo)]);
 }
 
 
@@ -266,10 +283,8 @@ async function main() {
       } else if (r) {
         if (rocket.isDateInAppointmentRange(r.appointment, range)) {
           matchingAppointmentCount++;
-          const ticketNo = r.ticketNo || r.parentTicketNo || '';
-          if (!rocket.isBkTicket(ticketNo)) {
-            console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (Ticket No ไม่ได้ขึ้นต้นด้วย BK: "' + ticketNo + '")');
-          } else if (!rocket.hasValidTechnician(r.technician)) {
+          // V2 รวมทุกสาขา (กรุงเทพ/สมุย/ภูเก็ต) — ไม่กรองเฉพาะตั๋ว BK เหมือนชีทเดิม
+          if (!rocket.hasValidTechnician(r.technician)) {
             console.log('ข้ามตั๋ว ' + (r.ticketNo || r.ticketId) + ' (Technician เป็นว่าง, "-" หรือ null: "' + (r.technician || '') + '")');
           } else {
             todayTickets.push(r);
@@ -281,7 +296,7 @@ async function main() {
     });
   }
 
-  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันนี้จริง: ' + matchingAppointmentCount + ' (ผ่าน filter BK & มีช่าง: ' + todayTickets.length + ')');
+  console.log('SUB TICKETS ที่มีนัดหมายตรงกับวันนี้จริง: ' + matchingAppointmentCount + ' (ทุกสาขา, ผ่าน filter มีช่าง: ' + todayTickets.length + ')');
 
   if (parentIds.length > 0 && candidateSubIds.length > 0 && matchingAppointmentCount === 0) {
     throw new Error('พบ parent/sub tickets แต่ไม่พบ appointment ที่ตรงกับวันที่ ' + range.start +

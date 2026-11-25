@@ -67,7 +67,7 @@ function loadScript(name, mocks) {
   return context;
 }
 
-async function runSync(name) {
+async function runSync(name, ticketNo = 'BKRM01.R01') {
   const today = rocket.computeTodayRangeBangkok().start;
   const written = {};
   const script = loadScript(name, {
@@ -82,13 +82,13 @@ async function runSync(name) {
       extractCheckRepairIds: () => ['101'],
       extractCheckRepairInfo: () => ({ '101': { technicians: 'ช่างหนึ่ง', team: 'A' } }),
       getTicketDetailHtml: async () => DETAIL_HTML,
-      parseTicketDetail: () => ({ ticketId: '101', ticketNo: 'BKRM01.R01', appointment: `${today} 09:00`, startTime: '10/11/2026 09:02', status: 'กำลังทำ', technician: 'ช่างหนึ่ง' }),
+      parseTicketDetail: () => ({ ticketId: '101', ticketNo, appointment: `${today} 09:00`, startTime: '10/11/2026 09:02', status: 'กำลังทำ', technician: 'ช่างหนึ่ง' }),
       getInspectorModalHtml: async () => '',
       parseInspectorModal: () => ({ status: '', type: 'งานซ่อม' }),
       getModalProductHtml: async () => '',
       parseSalesInvoiceNo: () => ''
     },
-    './lib/work-order-report': { getWorkOrderSentReport: async () => new Map([['BKRM01.R01', '']]) },
+    './lib/work-order-report': { getWorkOrderSentReport: async () => new Map([[ticketNo, '']]) },
     './lib/sheets-client': {
       getSheetsClient: async () => ({}),
       ensureSheetExists: async (sheets, id, name) => { written.ensured = name; return 1; },
@@ -101,13 +101,13 @@ async function runSync(name) {
 
 test('V2 writes Daily Repair Update V2 with check-in time after GPS and photo links', async () => {
   const { written } = await runSync('sync-daily-repair-v2.js');
-  // คอลัมน์เดิมต้องตรงกับชีท Daily Repair Update ทุกตัว แล้วต่อท้ายด้วย 5 คอลัมน์ใหม่
+  // คอลัมน์เดิมต้องตรงกับชีท Daily Repair Update ทุกตัว แล้วต่อท้ายด้วยคอลัมน์ใหม่
   const baseHeaders = (await runSync('sync-daily-repair.js')).written.headers;
 
   assert.equal(written.ensured, 'Daily Repair Update V2');
   assert.equal(written.name, 'Daily Repair Update V2');
   assert.deepEqual(Array.from(written.headers), [...baseHeaders,
-    'GPS Coordinates', 'Check-in Time', 'Check-in Photo (GPS)', 'Storefront Photo', 'Work Order Photo']);
+    'GPS Coordinates', 'Check-in Time', 'Check-in Photo (GPS)', 'Storefront Photo', 'Work Order Photo', 'Service Branch']);
 
   const row = written.rows[0];
   assert.equal(row.length, written.headers.length);
@@ -119,6 +119,7 @@ test('V2 writes Daily Repair Update V2 with check-in time after GPS and photo li
   assert.equal(extra[2], `${S3}/checkin_img/gps.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=59940&X-Amz-Signature=abc`);
   assert.match(extra[3], /^https:\/\/rocket75\.s3\S*checkin_img\/selfie\.jpeg\?/);
   assert.match(extra[4], /^https:\/\/rocket75\.s3\S*checkout_img\/workorder\.jpeg\?/);
+  assert.equal(extra[5], 'กรุงเทพ');
 });
 
 test('original Daily Repair Update sheet keeps its columns unchanged', async () => {
@@ -126,6 +127,25 @@ test('original Daily Repair Update sheet keeps its columns unchanged', async () 
   assert.equal(written.name, 'Daily Repair Update');
   assert.deepEqual(Array.from(written.headers), Array.from(vm.runInContext("HEADERS", script)));
   assert.equal(written.rows[0].length, vm.runInContext("HEADERS.length", script));
+});
+
+test('V2 includes tickets from other branches; original sheet stays BK-only', async () => {
+  const v2 = (await runSync('sync-daily-repair-v2.js', 'SMRM01.R01')).written;
+  assert.equal(v2.rows.length, 1);
+  assert.equal(v2.rows[0][1], 'SMRM01.R01');
+  assert.equal(v2.rows[0][v2.headers.indexOf('Service Branch')], 'สมุย');
+
+  const original = (await runSync('sync-daily-repair.js', 'SMRM01.R01')).written;
+  assert.equal(original.rows.length, 0);
+});
+
+test('serviceBranch maps ticket prefix and shows unknown prefixes as-is', () => {
+  const script = loadScript('sync-daily-repair-v2.js', {});
+  assert.equal(script.serviceBranch('BKRM0926-000123.R01'), 'กรุงเทพ');
+  assert.equal(script.serviceBranch('smrm0926-000123'), 'สมุย');
+  assert.equal(script.serviceBranch('PKRM0926-000123'), 'ภูเก็ต');
+  assert.equal(script.serviceBranch('CMRM0926-000123'), 'CM');
+  assert.equal(script.serviceBranch(''), '');
 });
 
 test('checkinMediaCells leaves cells blank when there is no media', () => {
