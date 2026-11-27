@@ -11,8 +11,11 @@ test('start date after today is a new employee', () => {
   assert.equal(isNewEmployee(startingOn('01/01/2027'), TODAY), true);
 });
 
-test('start date today or earlier is not a new employee', () => {
-  assert.equal(isNewEmployee(startingOn('07/11/2026'), TODAY), false);
+test('employee stays through two days after the start date', () => {
+  assert.equal(isNewEmployee(startingOn('07/11/2026'), TODAY), true);
+  assert.equal(isNewEmployee(startingOn('06/11/2026'), TODAY), true);
+  assert.equal(isNewEmployee(startingOn('05/11/2026'), TODAY), true);
+  assert.equal(isNewEmployee(startingOn('04/11/2026'), TODAY), false);
   assert.equal(isNewEmployee(startingOn('17/04/2002'), TODAY), false);
 });
 

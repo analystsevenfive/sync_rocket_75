@@ -32,9 +32,20 @@ function dateKey(text) {
   return match ? Number(match[3] + match[2] + match[1]) : null;
 }
 
+function dateDay(text) {
+  const match = String(text || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!match) return null;
+  const day = Number(match[1]), month = Number(match[2]), year = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return Math.floor(date.getTime() / 86400000);
+}
+
 function isNewEmployee(employee, today) {
-  const start = dateKey(employee.startDate);
-  return start !== null && start > dateKey(today);
+  const start = dateDay(employee.startDate);
+  const current = dateDay(today);
+  // แสดงตั้งแต่ก่อนเริ่มงาน และค้างไว้ถึง 2 วันหลังวันเริ่มงาน
+  return start !== null && current !== null && current <= start + 2;
 }
 
 async function main() {
@@ -62,4 +73,4 @@ if (require.main === module) main().catch(error => {
   process.exit(1);
 });
 
-module.exports = { dateKey, isNewEmployee, toRow, HEADERS };
+module.exports = { dateKey, dateDay, isNewEmployee, toRow, HEADERS };
