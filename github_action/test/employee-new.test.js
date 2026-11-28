@@ -90,10 +90,10 @@ test('employee without the document menu gets blank document cells', () => {
 });
 
 test('application document links are parsed from the employee detail response', () => {
-  const html = `<h6>สำเนาบัตรประชาชน</h6><a href="../uploads/ID.pdf">ID.pdf</a>
-    <h6>สำเนาทะเบียนบ้าน</h6><a href="/uploads/home.pdf">home.pdf</a>
-    <h6>สำเนาวุฒิการศึกษา</h6><a href="https://files.example/transcript.pdf?a=1&amp;b=2">degree.pdf</a>
-    <h6>เอกสารอื่นๆ</h6><span>ไม่มีไฟล์</span>`;
+  const html = `<label><b>สำเนาบัตรประชาชน</b></label><div><a href="../uploads/ID.pdf">ID.pdf</a></div>
+    <label><b>สำเนาทะเบียนบ้าน</b></label><div><a href="/uploads/home.pdf">home.pdf</a></div>
+    <label><b>สำเนาวุฒิการศึกษา</b></label><div><a href="https://files.example/transcript.pdf?a=1&amp;b=2">degree.pdf</a></div>
+    <label><b>เอกสารอื่นๆ</b></label><div>ไม่มีไฟล์</div>`;
   assert.deepEqual(working.parseApplicationDocumentLinks(html), {
     'สำเนาบัตรประชาชน': 'https://rocket75.com/uploads/ID.pdf',
     'สำเนาทะเบียนบ้าน': 'https://rocket75.com/uploads/home.pdf',

@@ -218,17 +218,28 @@ async function fetchEmployeeList(auth) {
 }
 
 async function fetchEmployeeDetail(auth, userId) {
-  const response = await rocket.fetchWithTimeout(`${rocket.ROCKET_BASE}/hr/ajax/employee_view/Get_Position.php`, {
-    method: 'POST', body: new URLSearchParams({ user_id: userId }),
-    headers: { Cookie: auth.cookie, Origin: rocket.ROCKET_BASE,
-      Referer: `${rocket.ROCKET_BASE}/hr/employee_view.php?user_id=${userId}`, 'X-Requested-With': 'XMLHttpRequest' }
-  });
-  if (!response.ok) throw new Error(`employee Get_Position.php HTTP ${response.status}`);
-  const html = await response.text();
+  const request = endpoint => rocket.fetchWithTimeout(
+    `${rocket.ROCKET_BASE}/hr/ajax/employee_view/${endpoint}`, {
+      method: 'POST', body: new URLSearchParams({ user_id: userId }),
+      headers: { Cookie: auth.cookie, Origin: rocket.ROCKET_BASE,
+        Referer: `${rocket.ROCKET_BASE}/hr/employee_view.php?user_id=${userId}`,
+        'X-Requested-With': 'XMLHttpRequest' }
+    });
+  // หน้าเว็บโหลดข้อมูลใบสมัครและเอกสารแนบคนละ endpoint
+  const [detailResponse, attachmentResponse] = await Promise.all([
+    request('Get_Position.php'), request('Get_User_Attach.php')
+  ]);
+  if (!detailResponse.ok) throw new Error(`employee Get_Position.php HTTP ${detailResponse.status}`);
+  if (!attachmentResponse.ok) {
+    throw new Error(`employee Get_User_Attach.php HTTP ${attachmentResponse.status}`);
+  }
+  const [html, attachmentHtml] = await Promise.all([
+    detailResponse.text(), attachmentResponse.text()
+  ]);
   return {
     detail: parseEmployeeDetail(html),
     photoUrl: parseDetailPhotoUrl(html),
-    applicationDocuments: parseApplicationDocumentLinks(html)
+    applicationDocuments: parseApplicationDocumentLinks(attachmentHtml)
   };
 }
 
