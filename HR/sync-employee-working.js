@@ -106,6 +106,29 @@ function parseDetailPhotoUrl(html) {
   return photo ? new URL(photo, `${rocket.ROCKET_BASE}/hr/`).href : '';
 }
 
+// เอกสารประกอบการสมัครอยู่ใน response เดียวกับข้อมูลส่วนตัว โดยหัวข้ออยู่ก่อนลิงก์ไฟล์
+// แบ่งช่วงด้วยหัวข้อถัดไปเพื่อไม่ให้ช่องที่ไม่มีไฟล์ไปหยิบลิงก์ของเอกสารถัดไปแทน
+const APPLICATION_DOCUMENT_LABELS = [
+  'สำเนาบัตรประชาชน', 'สำเนาทะเบียนบ้าน', 'สำเนาวุฒิการศึกษา', 'เอกสารอื่นๆ'
+];
+
+function parseApplicationDocumentLinks(html) {
+  const source = String(html || '').replace(/<!--[\s\S]*?-->/g, '');
+  const positions = APPLICATION_DOCUMENT_LABELS.map(label => ({ label, index: source.indexOf(label) }));
+  const links = {};
+  for (const { label, index } of positions) {
+    if (index < 0) continue;
+    const next = positions.filter(item => item.index > index)
+      .reduce((min, item) => Math.min(min, item.index), source.length);
+    const block = source.slice(index, next);
+    const href = block.match(/<a\b[^>]*\bhref=["']([^"']+)["']/i)?.[1];
+    if (href && !/^javascript:/i.test(href)) {
+      links[label] = new URL(href.replace(/&amp;/gi, '&'), `${rocket.ROCKET_BASE}/hr/`).href;
+    }
+  }
+  return links;
+}
+
 // รูปยืนยันตัวตนได้ก็ต่อเมื่อเป็นของคนนี้คนเดียว: รูป default ที่หลายคนใช้ร่วมกันไม่นับ
 function sharedPhotoUrls(employees) {
   const seen = new Set();
@@ -202,7 +225,11 @@ async function fetchEmployeeDetail(auth, userId) {
   });
   if (!response.ok) throw new Error(`employee Get_Position.php HTTP ${response.status}`);
   const html = await response.text();
-  return { detail: parseEmployeeDetail(html), photoUrl: parseDetailPhotoUrl(html) };
+  return {
+    detail: parseEmployeeDetail(html),
+    photoUrl: parseDetailPhotoUrl(html),
+    applicationDocuments: parseApplicationDocumentLinks(html)
+  };
 }
 
 async function setPhotoRowHeight(sheets, spreadsheetId, sheetId, rowCount) {
@@ -228,9 +255,12 @@ async function loadDetails(auth, employees, sharedPhotos) {
   const withoutProfile = [];
   const details = await rocket.mapConcurrentStrict(indexes, DETAIL_CONCURRENCY, async i => {
     const employee = employees[i];
-    const { detail, photoUrl } = await fetchEmployeeDetail(auth, employee.userId);
+    const { detail, photoUrl, applicationDocuments } = await fetchEmployeeDetail(auth, employee.userId);
     const photoConfirmed = Boolean(photoUrl) && photoUrl === employee.photoUrl && !sharedPhotos.has(photoUrl);
-    if (verifyDetail(employee, detail, photoConfirmed)) return detail;
+    if (verifyDetail(employee, detail, photoConfirmed)) {
+      detail.__applicationDocuments = applicationDocuments;
+      return detail;
+    }
     withoutProfile.push(employee.employeeId);
     return {};
   });
@@ -271,6 +301,7 @@ if (require.main === module) main().catch(error => {
 });
 
 module.exports = {
-  parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, sharedPhotoUrls, verifyDetail,
+  parseEmployeeList, parseEmployeeDetail, parseDetailPhotoUrl, parseApplicationDocumentLinks,
+  sharedPhotoUrls, verifyDetail,
   asText, photoFormula, thaiName, toRow, fetchEmployeeList, loadDetails, writeEmployeeSheet, HEADERS, DETAIL_FIELDS
 };

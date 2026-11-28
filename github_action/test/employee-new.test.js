@@ -62,7 +62,13 @@ test('document menu links are read with absolute, encoded urls', () => {
 
 test('document columns follow the photo link and hold plain urls', () => {
   const [employee] = working.parseEmployeeList(listHtml(MENU));
-  const values = toRow(employee, {}, 'now');
+  const detail = { __applicationDocuments: {
+    'สำเนาบัตรประชาชน': 'https://rocket75.com/uploads/ID.pdf',
+    'สำเนาทะเบียนบ้าน': 'https://rocket75.com/uploads/home.pdf',
+    'สำเนาวุฒิการศึกษา': 'https://rocket75.com/uploads/transcript.pdf',
+    'เอกสารอื่นๆ': 'https://rocket75.com/uploads/other.pdf'
+  } };
+  const values = toRow(employee, detail, 'now');
   assert.equal(values.length, HEADERS.length);
   assert.deepEqual(HEADERS.slice(0, 6),
     ['รูป', 'ลิงก์รูป', 'ประกาศพนักงานเริ่มงานใหม่', 'ใบปะหน้าแฟ้มประวัติ', 'Checklist ปฐมนิเทศ', 'รหัสพนักงาน']);
@@ -71,12 +77,28 @@ test('document columns follow the photo link and hold plain urls', () => {
   assert.equal(values[4], employee.documents['Checklist ปฐมนิเทศ']);
   assert.equal(values[5], "'0100001");
   assert.equal(values[HEADERS.indexOf('Last Sync')], "'now");
+  assert.deepEqual(HEADERS.slice(-4),
+    ['สำเนาบัตรประชาชน', 'สำเนาทะเบียนบ้าน', 'สำเนาวุฒิการศึกษา', 'เอกสารอื่นๆ']);
+  assert.deepEqual(values.slice(-4), Object.values(detail.__applicationDocuments));
 });
 
 test('employee without the document menu gets blank document cells', () => {
   const [employee] = working.parseEmployeeList(listHtml(''));
   const values = toRow(employee, {}, 'now');
   assert.deepEqual(values.slice(2, 5), ['', '', '']);
+  assert.deepEqual(values.slice(-4), ['', '', '', '']);
+});
+
+test('application document links are parsed from the employee detail response', () => {
+  const html = `<h6>สำเนาบัตรประชาชน</h6><a href="../uploads/ID.pdf">ID.pdf</a>
+    <h6>สำเนาทะเบียนบ้าน</h6><a href="/uploads/home.pdf">home.pdf</a>
+    <h6>สำเนาวุฒิการศึกษา</h6><a href="https://files.example/transcript.pdf?a=1&amp;b=2">degree.pdf</a>
+    <h6>เอกสารอื่นๆ</h6><span>ไม่มีไฟล์</span>`;
+  assert.deepEqual(working.parseApplicationDocumentLinks(html), {
+    'สำเนาบัตรประชาชน': 'https://rocket75.com/uploads/ID.pdf',
+    'สำเนาทะเบียนบ้าน': 'https://rocket75.com/uploads/home.pdf',
+    'สำเนาวุฒิการศึกษา': 'https://files.example/transcript.pdf?a=1&b=2'
+  });
 });
 
 test('Employee Working keeps its columns without document links', () => {
